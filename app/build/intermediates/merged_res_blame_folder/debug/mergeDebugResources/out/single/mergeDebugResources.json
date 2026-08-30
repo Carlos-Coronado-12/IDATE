@@ -1,0 +1,78 @@
+[
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_ceramica.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_ceramica.jpg"
+    },
+    {
+        "merged": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-debug-49:\\mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-main-51:\\mipmap-anydpi-v26\\ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_escape.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_escape.jpg"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_senderismo.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_senderismo.jpg"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_sushi.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_sushi.jpg"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_ic_idate_logo.png.flat",
+        "source": "com.example.idate.app-main-51:/drawable/ic_idate_logo.png"
+    },
+    {
+        "merged": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-debug-49:\\drawable_ic_idate_logo.png.flat",
+        "source": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-main-51:\\drawable\\ic_idate_logo.png"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_boliche.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_boliche.jpg"
+    },
+    {
+        "merged": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-debug-49:\\mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-main-51:\\mipmap-anydpi-v26\\ic_launcher.xml"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_cine.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_cine.jpg"
+    },
+    {
+        "merged": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-debug-49:\\drawable_ic_launcher_foreground.xml.flat",
+        "source": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-main-51:\\drawable\\ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_legos.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_legos.jpg"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_tacos.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_tacos.jpg"
+    },
+    {
+        "merged": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-debug-49:\\drawable_ic_idate_logo.xml.flat",
+        "source": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-main-51:\\drawable\\ic_idate_logo.xml"
+    },
+    {
+        "merged": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-debug-49:\\drawable_ic_launcher_background.xml.flat",
+        "source": "C:\\Users\\2a8ca\\.gradle\\daemon\\8.10.2\\com.example.idate.app-main-51:\\drawable\\ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_drinks.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_drinks.jpg"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_pizza.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_pizza.jpg"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_jazz.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_jazz.jpg"
+    },
+    {
+        "merged": "com.example.idate.app-debug-49:/drawable_plan_picnic.jpg.flat",
+        "source": "com.example.idate.app-main-51:/drawable/plan_picnic.jpg"
+    }
+]
