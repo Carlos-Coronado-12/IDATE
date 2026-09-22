@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.example.idate.R
 import com.example.idate.model.Plan
 
 @Composable
@@ -98,7 +99,7 @@ fun MatchDialog(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     AsyncImage(
-                        model = plan.imageUrl,
+                        model = if (plan.imageUrl.isNotBlank()) plan.imageUrl else if (plan.imageResId != 0) plan.imageResId else R.drawable.plan_legos,
                         contentDescription = plan.title,
                         modifier = Modifier
                             .size(60.dp)

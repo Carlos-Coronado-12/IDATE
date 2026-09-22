@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.idate.R
 import com.example.idate.model.Plan
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,7 +149,7 @@ fun SavedPlanItem(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             AsyncImage(
-                model = plan.imageResId,
+                model = if (plan.imageUrl.isNotBlank()) plan.imageUrl else if (plan.imageResId != 0) plan.imageResId else R.drawable.plan_legos,
                 contentDescription = plan.title,
                 modifier = Modifier
                     .size(70.dp)

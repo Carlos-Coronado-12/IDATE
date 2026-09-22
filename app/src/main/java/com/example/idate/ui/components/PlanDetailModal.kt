@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.idate.R
 import com.example.idate.model.Plan
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,7 +38,8 @@ fun PlanDetailModal(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = Color.White,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = null
     ) {
         Column(
             modifier = Modifier
@@ -52,7 +54,7 @@ fun PlanDetailModal(
                     .height(240.dp)
             ) {
                 AsyncImage(
-                    model = plan.imageResId,
+                    model = if (plan.imageUrl.isNotBlank()) plan.imageUrl else if (plan.imageResId != 0) plan.imageResId else R.drawable.plan_legos,
                     contentDescription = plan.title,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

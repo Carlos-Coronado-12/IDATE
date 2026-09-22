@@ -10,6 +10,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -32,9 +34,10 @@ fun ActionButtonsBar(
         // 1. Rewind / Deshacer Button (Orange)
         ActionButton(
             icon = Icons.Default.Replay,
+            label = "Rebobinar y ver plan anterior",
             tint = if (canRewind) Color(0xFFF57C00) else Color.LightGray,
-            size = 48.dp,
-            iconSize = 24.dp,
+            size = 50.dp,
+            iconSize = 26.dp,
             enabled = canRewind,
             onClick = onRewind
         )
@@ -42,18 +45,20 @@ fun ActionButtonsBar(
         // 2. Rechazar / Paso Button (Red ⬇️)
         ActionButton(
             icon = Icons.Default.KeyboardArrowDown,
+            label = "Descartar plan actual (Paso)",
             tint = Color(0xFFFF1744),
-            size = 58.dp,
-            iconSize = 34.dp,
+            size = 60.dp,
+            iconSize = 36.dp,
             onClick = onDislike
         )
 
-        // 3. Me Interesa / Aceptar Button (Green ⬆️) - Moved to star's position!
+        // 3. Me Interesa / Aceptar Button (Green ⬆️)
         ActionButton(
             icon = Icons.Default.KeyboardArrowUp,
+            label = "Me interesa este plan (Dar Like y guardar)",
             tint = Color(0xFF00E676),
-            size = 58.dp,
-            iconSize = 34.dp,
+            size = 60.dp,
+            iconSize = 36.dp,
             onClick = onLike
         )
     }
@@ -62,6 +67,7 @@ fun ActionButtonsBar(
 @Composable
 fun ActionButton(
     icon: ImageVector,
+    label: String,
     tint: Color,
     size: Dp,
     iconSize: Dp,
@@ -74,7 +80,9 @@ fun ActionButton(
         shape = CircleShape,
         color = Color.White,
         shadowElevation = if (enabled) 6.dp else 1.dp,
-        modifier = Modifier.size(size)
+        modifier = Modifier
+            .size(size)
+            .semantics { contentDescription = label }
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -89,3 +97,4 @@ fun ActionButton(
         }
     }
 }
+

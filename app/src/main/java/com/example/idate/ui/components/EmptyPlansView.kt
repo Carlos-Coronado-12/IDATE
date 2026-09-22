@@ -1,17 +1,14 @@
 package com.example.idate.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -20,19 +17,21 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun EmptyPlansView(
+    hasAnyPlans: Boolean = false,
     onResetDeck: () -> Unit,
+    onCreateNewPlan: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(28.dp),
         contentAlignment = Alignment.Center
     ) {
         Card(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFFBFBFD)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -41,12 +40,12 @@ fun EmptyPlansView(
                     .padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(text = "🎉", fontSize = 56.sp)
+                Text(text = if (hasAnyPlans) "🎉" else "✨", fontSize = 56.sp)
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "¡Has visto todos los planes!",
+                    text = if (hasAnyPlans) "¡Has visto todos los planes!" else "Tu catálogo está vacío",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black,
@@ -56,7 +55,10 @@ fun EmptyPlansView(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Prueba cambiando la pestaña de filtro arriba o reinicia la baraja para volver a explorarlos.",
+                    text = if (hasAnyPlans)
+                        "Prueba reiniciando la baraja o agrega nuevas ideas de citas personalizadas."
+                    else
+                        "La base de datos está limpia. Puedes comenzar a crear tus propios planes con el menú personalizado.",
                     fontSize = 14.sp,
                     color = Color.Gray,
                     textAlign = TextAlign.Center,
@@ -66,27 +68,35 @@ fun EmptyPlansView(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
-                    onClick = onResetDeck,
+                    onClick = onCreateNewPlan,
                     shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE91E63)
-                    ),
-                    modifier = Modifier.height(48.dp)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        tint = Color.White
-                    )
+                    Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Reiniciar baraja",
+                        text = "Crear Nuevo Plan",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     )
                 }
+
+                if (hasAnyPlans) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onResetDeck,
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Reiniciar baraja", fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
     }
 }
+
