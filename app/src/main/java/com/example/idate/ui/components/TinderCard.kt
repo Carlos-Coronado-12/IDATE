@@ -67,7 +67,18 @@ fun TinderCard(
             .rotate(rotation)
             .shadow(12.dp, shape = RoundedCornerShape(28.dp))
             .clip(RoundedCornerShape(28.dp))
-            .border(2.dp, Color.Red.copy(alpha = 0.8f), RoundedCornerShape(28.dp))
+            .border(
+                width = 3.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF4CAF50), // Verde arriba
+                        Color(0xFF66BB6A),
+                        Color(0xFFEF5350),
+                        Color(0xFFE53935)  // Rojo abajo
+                    )
+                ),
+                shape = RoundedCornerShape(28.dp)
+            )
             .background(Color.Black)
             .pointerInput(plan.id) {
                 detectDragGestures(
@@ -309,6 +320,24 @@ fun TinderCard(
                 }
             }
         }
+
+        // Borde superior verde e inferior rojo alrededor de la tarjeta
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(
+                    width = 3.5.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF2E7D32), // Verde en la parte superior
+                            Color(0xFF4CAF50),
+                            Color(0xFFEF5350),
+                            Color(0xFFC62828)  // Rojo en la parte inferior
+                        )
+                    ),
+                    shape = RoundedCornerShape(28.dp)
+                )
+        )
     }
 }
 

@@ -20,6 +20,16 @@ data class UserProfile(
     val bio: String = "¡Listo para los mejores planes!"
 )
 
+data class FriendRequest(
+    val id: String = "",
+    val fromUserId: String = "",
+    val fromUserName: String = "",
+    val fromUserAvatar: String = "👋",
+    val fromUserCode: String = "",
+    val toUserId: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class Friend(
     val id: String,
     val friendCode: String,

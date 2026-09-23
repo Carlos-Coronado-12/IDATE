@@ -138,6 +138,22 @@ class IDateRepository(context: Context) {
         )
     }
 
+    suspend fun syncFriendsFromRemote(remoteFriends: List<Friend>) {
+        val entities = remoteFriends.map { friend ->
+            FriendEntity(
+                id = friend.id,
+                friendCode = friend.friendCode,
+                name = friend.name,
+                avatarEmoji = friend.avatarEmoji,
+                status = friend.status.name,
+                mutualMatchesCount = friend.mutualMatchesCount,
+                isOnline = friend.isOnline,
+                createdAt = friend.createdAt
+            )
+        }
+        friendDao.insertFriends(entities)
+    }
+
     suspend fun removeFriend(friendId: String) {
         friendDao.deleteFriend(friendId)
     }
@@ -179,6 +195,25 @@ class IDateRepository(context: Context) {
                 createdAt = group.createdAt
             )
         )
+    }
+
+    suspend fun syncGroupsFromRemote(remoteGroups: List<FriendGroup>) {
+        val entities = remoteGroups.map { group ->
+            GroupEntity(
+                id = group.id,
+                groupCode = group.groupCode,
+                name = group.name,
+                description = group.description,
+                iconEmoji = group.iconEmoji,
+                colorHex = group.colorHex,
+                memberCount = group.memberCount,
+                memberNames = group.memberNames,
+                matchedPlansCount = group.matchedPlansCount,
+                createdBy = group.createdBy,
+                createdAt = group.createdAt
+            )
+        }
+        friendDao.insertGroups(entities)
     }
 
     suspend fun removeGroup(groupId: String) {

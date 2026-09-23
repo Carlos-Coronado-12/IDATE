@@ -32,6 +32,9 @@ object FriendsRemoteManager {
     private val _friendEvents = MutableSharedFlow<FriendEvent>(replay = 1)
     val friendEvents: SharedFlow<FriendEvent> = _friendEvents.asSharedFlow()
 
+    private val _incomingRequests = MutableStateFlow<List<FriendRequest>>(emptyList())
+    val incomingRequests: StateFlow<List<FriendRequest>> = _incomingRequests.asStateFlow()
+
     private val _activeGroupMatches = MutableStateFlow<Map<String, List<Int>>>(emptyMap())
     val activeGroupMatches: StateFlow<Map<String, List<Int>>> = _activeGroupMatches.asStateFlow()
 
@@ -47,6 +50,9 @@ object FriendsRemoteManager {
 
     private val activeGroupListeners = mutableMapOf<String, ValueEventListener>()
     private val activeFriendListeners = mutableMapOf<String, ValueEventListener>()
+    private var incomingRequestsListener: ValueEventListener? = null
+    private var userFriendsListener: ValueEventListener? = null
+    private var allGroupsListener: ValueEventListener? = null
     private val notifiedMatches = mutableSetOf<String>()
 
     // Register or Sync Current User Profile in Firebase
@@ -67,9 +73,9 @@ object FriendsRemoteManager {
         }
     }
 
-    // Find a friend by Friend Code
-    fun findFriendByCode(code: String, onResult: (Result<Friend>) -> Unit) {
-        val formattedCode = code.trim().uppercase()
+    // Send a Friend Request to a target user by Friend Code
+    fun sendFriendRequest(fromUser: UserProfile, targetCode: String, onResult: (Result<String>) -> Unit) {
+        val formattedCode = targetCode.trim().uppercase()
         realtimeDb.getReference("users").child(formattedCode)
             .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
@@ -77,24 +83,193 @@ object FriendsRemoteManager {
                         onResult(Result.failure(Exception("No se encontró ningún usuario con el código $formattedCode")))
                         return
                     }
-                    val userId = snapshot.child("userId").getValue(String::class.java) ?: formattedCode
-                    val name = snapshot.child("name").getValue(String::class.java) ?: "Amigo"
-                    val avatar = snapshot.child("avatarEmoji").getValue(String::class.java) ?: "👋"
+                    val targetUserId = snapshot.child("userId").getValue(String::class.java) ?: formattedCode
+                    val targetName = snapshot.child("name").getValue(String::class.java) ?: "Usuario"
 
-                    val friend = Friend(
-                        id = userId,
-                        friendCode = formattedCode,
-                        name = name,
-                        avatarEmoji = avatar,
-                        status = FriendStatus.ACCEPTED
-                    )
-                    onResult(Result.success(friend))
+                    if (targetUserId == fromUser.userId) {
+                        onResult(Result.failure(Exception("No puedes enviarte una solicitud a ti mismo")))
+                        return
+                    }
+
+                    // Check if already friends
+                    realtimeDb.getReference("userFriends").child(fromUser.userId).child(targetUserId)
+                        .addListenerForSingleValueEvent(object : ValueEventListener {
+                            override fun onDataChange(friendSnap: DataSnapshot) {
+                                if (friendSnap.exists()) {
+                                    onResult(Result.failure(Exception("¡Ya son amigos!")))
+                                    return
+                                }
+
+                                val requestRef = realtimeDb.getReference("friendRequests")
+                                    .child(targetUserId)
+                                    .child(fromUser.userId)
+
+                                val requestData = mapOf(
+                                    "id" to fromUser.userId,
+                                    "fromUserId" to fromUser.userId,
+                                    "fromUserName" to fromUser.name,
+                                    "fromUserAvatar" to fromUser.avatarEmoji,
+                                    "fromUserCode" to fromUser.friendCode,
+                                    "toUserId" to targetUserId,
+                                    "timestamp" to System.currentTimeMillis()
+                                )
+
+                                requestRef.setValue(requestData).addOnSuccessListener {
+                                    onResult(Result.success("¡Solicitud enviada a $targetName!"))
+                                }.addOnFailureListener {
+                                    onResult(Result.failure(it))
+                                }
+                            }
+
+                            override fun onCancelled(error: DatabaseError) {
+                                onResult(Result.failure(Exception(error.message)))
+                            }
+                        })
                 }
 
                 override fun onCancelled(error: DatabaseError) {
                     onResult(Result.failure(Exception(error.message)))
                 }
             })
+    }
+
+    // Listen to Incoming Friend Requests for current user
+    fun listenToIncomingFriendRequests(myUserId: String) {
+        incomingRequestsListener?.let {
+            realtimeDb.getReference("friendRequests").child(myUserId).removeEventListener(it)
+        }
+
+        val ref = realtimeDb.getReference("friendRequests").child(myUserId)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<FriendRequest>()
+                snapshot.children.forEach { snap ->
+                    val id = snap.child("id").getValue(String::class.java) ?: snap.key ?: ""
+                    val fromUserId = snap.child("fromUserId").getValue(String::class.java) ?: ""
+                    val fromUserName = snap.child("fromUserName").getValue(String::class.java) ?: "Amigo"
+                    val fromUserAvatar = snap.child("fromUserAvatar").getValue(String::class.java) ?: "👋"
+                    val fromUserCode = snap.child("fromUserCode").getValue(String::class.java) ?: ""
+                    val toUserId = snap.child("toUserId").getValue(String::class.java) ?: myUserId
+                    val timestamp = snap.child("timestamp").getValue(Long::class.java) ?: System.currentTimeMillis()
+
+                    if (fromUserId.isNotBlank()) {
+                        list.add(
+                            FriendRequest(
+                                id = id,
+                                fromUserId = fromUserId,
+                                fromUserName = fromUserName,
+                                fromUserAvatar = fromUserAvatar,
+                                fromUserCode = fromUserCode,
+                                toUserId = toUserId,
+                                timestamp = timestamp
+                            )
+                        )
+                    }
+                }
+                _incomingRequests.value = list
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("IDATE_FRIENDS", "Error en listener de solicitudes: ${error.message}")
+            }
+        }
+        incomingRequestsListener = listener
+        ref.addValueEventListener(listener)
+    }
+
+    // Accept Friend Request (Creates mutual friendship)
+    fun acceptFriendRequest(request: FriendRequest, myProfile: UserProfile, onResult: (Result<Friend>) -> Unit) {
+        val rootRef = realtimeDb.reference
+
+        val friendForMe = Friend(
+            id = request.fromUserId,
+            friendCode = request.fromUserCode,
+            name = request.fromUserName,
+            avatarEmoji = request.fromUserAvatar,
+            status = FriendStatus.ACCEPTED
+        )
+
+        val updates = hashMapOf<String, Any>(
+            // Add to my friends
+            "userFriends/${myProfile.userId}/${request.fromUserId}" to mapOf(
+                "id" to request.fromUserId,
+                "friendCode" to request.fromUserCode,
+                "name" to request.fromUserName,
+                "avatarEmoji" to request.fromUserAvatar,
+                "createdAt" to System.currentTimeMillis()
+            ),
+            // Add to the requester's friends
+            "userFriends/${request.fromUserId}/${myProfile.userId}" to mapOf(
+                "id" to myProfile.userId,
+                "friendCode" to myProfile.friendCode,
+                "name" to myProfile.name,
+                "avatarEmoji" to myProfile.avatarEmoji,
+                "createdAt" to System.currentTimeMillis()
+            )
+        )
+
+        rootRef.updateChildren(updates).addOnSuccessListener {
+            // Delete pending request
+            realtimeDb.getReference("friendRequests").child(myProfile.userId).child(request.fromUserId).removeValue()
+            listenToFriendPair(myProfile.userId, request.fromUserId, request.fromUserName)
+            onResult(Result.success(friendForMe))
+        }.addOnFailureListener {
+            onResult(Result.failure(it))
+        }
+    }
+
+    // Reject / Delete Friend Request
+    fun rejectFriendRequest(request: FriendRequest, myUserId: String) {
+        realtimeDb.getReference("friendRequests").child(myUserId).child(request.fromUserId).removeValue()
+    }
+
+    // Listen to mutual friends from Firebase in real-time
+    fun listenToUserFriends(myUserId: String, onFriendsUpdated: (List<Friend>) -> Unit) {
+        userFriendsListener?.let {
+            realtimeDb.getReference("userFriends").child(myUserId).removeEventListener(it)
+        }
+
+        val ref = realtimeDb.getReference("userFriends").child(myUserId)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<Friend>()
+                snapshot.children.forEach { snap ->
+                    val id = snap.child("id").getValue(String::class.java) ?: snap.key ?: return@forEach
+                    val code = snap.child("friendCode").getValue(String::class.java) ?: ""
+                    val name = snap.child("name").getValue(String::class.java) ?: "Amigo"
+                    val avatar = snap.child("avatarEmoji").getValue(String::class.java) ?: "👋"
+                    val createdAt = snap.child("createdAt").getValue(Long::class.java) ?: System.currentTimeMillis()
+
+                    val friend = Friend(
+                        id = id,
+                        friendCode = code,
+                        name = name,
+                        avatarEmoji = avatar,
+                        status = FriendStatus.ACCEPTED,
+                        createdAt = createdAt
+                    )
+                    list.add(friend)
+                    listenToFriendPair(myUserId, id, name)
+                }
+                onFriendsUpdated(list)
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("IDATE_FRIENDS", "Error sincronizando amigos: ${error.message}")
+            }
+        }
+        userFriendsListener = listener
+        ref.addValueEventListener(listener)
+    }
+
+    // Delete Friend Relationship
+    fun deleteFriendPair(myUserId: String, friendId: String) {
+        val rootRef = realtimeDb.reference
+        val updates = hashMapOf<String, Any?>(
+            "userFriends/$myUserId/$friendId" to null,
+            "userFriends/$friendId/$myUserId" to null
+        )
+        rootRef.updateChildren(updates)
     }
 
     // Listen to Friend Pair Interaction for Realtime Matches
@@ -178,6 +353,17 @@ object FriendsRemoteManager {
         }
     }
 
+    // Add a Friend to a Group in Cloud (by Creator)
+    fun addFriendToGroupInCloud(groupCode: String, friendId: String, friendName: String, onResult: (Result<Unit>) -> Unit) {
+        realtimeDb.getReference("groups").child(groupCode).child("members").child(friendId).setValue(friendName)
+            .addOnSuccessListener {
+                onResult(Result.success(Unit))
+            }
+            .addOnFailureListener {
+                onResult(Result.failure(it))
+            }
+    }
+
     // Join an existing group by Code
     fun joinGroupByCode(code: String, userId: String, userName: String, onResult: (Result<FriendGroup>) -> Unit) {
         val formattedCode = code.trim().uppercase()
@@ -195,6 +381,7 @@ object FriendsRemoteManager {
                 val desc = snapshot.child("description").getValue(String::class.java) ?: ""
                 val icon = snapshot.child("iconEmoji").getValue(String::class.java) ?: "🎉"
                 val color = snapshot.child("colorHex").getValue(Long::class.java) ?: 0xFF6200EE
+                val createdBy = snapshot.child("createdBy").getValue(String::class.java) ?: ""
 
                 // Add current user as member
                 groupRef.child("members").child(userId).setValue(userName)
@@ -213,7 +400,8 @@ object FriendsRemoteManager {
                     iconEmoji = icon,
                     colorHex = color,
                     memberCount = membersList.size,
-                    memberNames = membersList
+                    memberNames = membersList,
+                    createdBy = createdBy
                 )
 
                 listenToGroup(formattedCode, name)
@@ -224,6 +412,58 @@ object FriendsRemoteManager {
                 onResult(Result.failure(Exception(error.message)))
             }
         })
+    }
+
+    // Listen to all groups that the user is a member of in real-time
+    fun listenToAllUserGroups(myUserId: String, onGroupsUpdated: (List<FriendGroup>) -> Unit) {
+        allGroupsListener?.let {
+            realtimeDb.getReference("groups").removeEventListener(it)
+        }
+
+        val ref = realtimeDb.getReference("groups")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<FriendGroup>()
+                snapshot.children.forEach { groupSnap ->
+                    val membersSnap = groupSnap.child("members")
+                    if (membersSnap.child(myUserId).exists()) {
+                        val id = groupSnap.child("id").getValue(String::class.java) ?: groupSnap.key ?: ""
+                        val code = groupSnap.child("groupCode").getValue(String::class.java) ?: groupSnap.key ?: ""
+                        val name = groupSnap.child("name").getValue(String::class.java) ?: "Grupo"
+                        val desc = groupSnap.child("description").getValue(String::class.java) ?: ""
+                        val icon = groupSnap.child("iconEmoji").getValue(String::class.java) ?: "🎉"
+                        val color = groupSnap.child("colorHex").getValue(Long::class.java) ?: 0xFF6200EE
+                        val createdBy = groupSnap.child("createdBy").getValue(String::class.java) ?: ""
+
+                        val memberNames = mutableListOf<String>()
+                        membersSnap.children.forEach { mem ->
+                            mem.getValue(String::class.java)?.let { memberNames.add(it) }
+                        }
+
+                        val g = FriendGroup(
+                            id = id,
+                            groupCode = code,
+                            name = name,
+                            description = desc,
+                            iconEmoji = icon,
+                            colorHex = color,
+                            memberCount = memberNames.size,
+                            memberNames = memberNames,
+                            createdBy = createdBy
+                        )
+                        list.add(g)
+                        listenToGroup(code, name)
+                    }
+                }
+                onGroupsUpdated(list)
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("IDATE_FRIENDS", "Error sincronizando grupos: ${error.message}")
+            }
+        }
+        allGroupsListener = listener
+        ref.addValueEventListener(listener)
     }
 
     // Listen to Group Votes and Matches
@@ -248,7 +488,7 @@ object FriendsRemoteManager {
                 votesSnap.children.forEach { planSnap ->
                     val planId = planSnap.key?.toIntOrNull() ?: return@forEach
                     val voteCount = planSnap.childrenCount.toInt()
-                    
+
                     // Group Match Condition: At least 2 members liked the plan
                     val isGroupMatch = voteCount >= 2
 
@@ -262,8 +502,8 @@ object FriendsRemoteManager {
                             val likersList = mutableListOf<String>()
                             planSnap.children.forEach { voteChild ->
                                 val vUserId = voteChild.key ?: return@forEach
-                                val vName = voteChild.getValue(String::class.java) 
-                                    ?: membersMap[vUserId] 
+                                val vName = voteChild.getValue(String::class.java)
+                                    ?: membersMap[vUserId]
                                     ?: "Amigo"
                                 if (!likersList.contains(vName)) {
                                     likersList.add(vName)

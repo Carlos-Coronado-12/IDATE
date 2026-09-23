@@ -1,5 +1,8 @@
 package com.example.idate.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -31,6 +35,7 @@ import com.example.idate.R
 import com.example.idate.model.Friend
 import com.example.idate.model.FriendGroup
 import com.example.idate.model.PlanScope
+import com.example.idate.ui.utils.ImagePickerUtils
 
 data class PresetImageOption(
     val name: String,
@@ -61,6 +66,8 @@ fun CreatePlanModal(
         scope: PlanScope
     ) -> Unit
 ) {
+    val context = LocalContext.current
+
     var title by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("Comida") }
     var description by remember { mutableStateOf("") }
@@ -97,6 +104,20 @@ fun CreatePlanModal(
 
     var selectedPresetResName by remember { mutableStateOf("plan_sushi") }
     var customImageUrl by remember { mutableStateOf("") }
+    var isFromGallery by remember { mutableStateOf(false) }
+
+    // Gallery Picker launcher
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val savedLocalPath = ImagePickerUtils.copyImageToInternalStorage(context, uri)
+            if (savedLocalPath != null) {
+                customImageUrl = "file://$savedLocalPath"
+                isFromGallery = true
+            }
+        }
+    }
 
     // Validation errors
     var titleError by remember { mutableStateOf<String?>(null) }
@@ -417,7 +438,7 @@ fun CreatePlanModal(
                         }
                     }
 
-                    // Image Selector Section
+                    // Image Selector Section (Gallery, Web URL, Presets)
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -432,20 +453,100 @@ fun CreatePlanModal(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Image,
+                                imageVector = Icons.Default.AddPhotoAlternate,
                                 contentDescription = null,
                                 tint = Color(0xFFE91E63),
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "Elige la Imagen del Plan:",
-                                fontSize = 13.sp,
+                                text = "Imagen del Plan:",
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.Black
                             )
                         }
 
-                        // Presets Carousel
+                        // 1. Botón Cargar de Galería
+                        Button(
+                            onClick = {
+                                galleryLauncher.launch("image/*")
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                        ) {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isFromGallery && customImageUrl.isNotBlank()) "Cambiar Foto de la Galería" else "Cargar Foto de mi Galería",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        // Live Preview if Custom Image or Gallery image is selected
+                        if (customImageUrl.isNotBlank()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White)
+                                    .border(1.5.dp, Color(0xFF4CAF50), RoundedCornerShape(12.dp))
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                AsyncImage(
+                                    model = customImageUrl,
+                                    contentDescription = "Vista previa de foto",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (isFromGallery) "✓ Foto de galería seleccionada" else "✓ URL personalizada activa",
+                                        color = Color(0xFF2E7D32),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (isFromGallery) "Lista para mostrarse en las tarjetas" else customImageUrl,
+                                        color = Color.Gray,
+                                        fontSize = 11.sp,
+                                        maxLines = 1
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        customImageUrl = ""
+                                        isFromGallery = false
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Quitar foto",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = Color(0xFFE0E0E0), modifier = Modifier.padding(vertical = 2.dp))
+
+                        // 2. Presets Carousel
+                        Text(
+                            text = "O elige una de nuestras imágenes:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.DarkGray
+                        )
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -461,6 +562,7 @@ fun CreatePlanModal(
                                         .clickable {
                                             selectedPresetResName = option.resName
                                             customImageUrl = ""
+                                            isFromGallery = false
                                         }
                                 ) {
                                     Box(
@@ -507,18 +609,21 @@ fun CreatePlanModal(
                             }
                         }
 
-                        // Custom Image URL Input
+                        // 3. Custom Image URL Input
                         OutlinedTextField(
-                            value = customImageUrl,
-                            onValueChange = { customImageUrl = it },
-                            label = { Text("O pega una URL de Imagen Web (opcional)") },
+                            value = if (isFromGallery) "" else customImageUrl,
+                            onValueChange = {
+                                customImageUrl = it
+                                isFromGallery = false
+                            },
+                            label = { Text("O pega una URL de Imagen Web") },
                             placeholder = { Text("https://ejemplo.com/foto.jpg") },
                             singleLine = true,
                             leadingIcon = {
                                 Icon(Icons.Default.Link, contentDescription = null, tint = Color.Gray)
                             },
                             trailingIcon = {
-                                if (customImageUrl.isNotBlank()) {
+                                if (customImageUrl.isNotBlank() && !isFromGallery) {
                                     IconButton(onClick = { customImageUrl = "" }) {
                                         Icon(Icons.Default.Clear, contentDescription = "Limpiar URL", tint = Color.Gray)
                                     }
@@ -527,42 +632,6 @@ fun CreatePlanModal(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
                         )
-
-                        if (customImageUrl.isNotBlank()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color.White)
-                                    .border(1.dp, Color(0xFF4CAF50), RoundedCornerShape(10.dp))
-                                    .padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                AsyncImage(
-                                    model = customImageUrl,
-                                    contentDescription = "Vista previa de URL",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(50.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "✓ Vista previa de URL personalizada activa",
-                                        color = Color(0xFF2E7D32),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = customImageUrl,
-                                        color = Color.Gray,
-                                        fontSize = 10.sp,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                        }
                     }
 
                     // Description Input

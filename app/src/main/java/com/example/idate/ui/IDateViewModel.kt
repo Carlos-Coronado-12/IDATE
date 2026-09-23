@@ -32,6 +32,7 @@ data class IDateUiState(
     val showPlanManagerSheet: Boolean = false,
     val userProfile: UserProfile? = null,
     val friendsList: List<Friend> = emptyList(),
+    val incomingFriendRequests: List<FriendRequest> = emptyList(),
     val groupsList: List<FriendGroup> = emptyList(),
     val activeContext: ActivePlanningContext = ActivePlanningContext(),
     val isConnecting: Boolean = false,
@@ -53,10 +54,11 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
         // Start Realtime synchronization for Plans
         repository.startRealtimePlansSync(viewModelScope)
 
-        // Initialize / Load User Profile
+        // Initialize / Load User Profile & Remote Listeners
         viewModelScope.launch {
             val profile = repository.getOrCreateUserProfile()
             _uiState.update { it.copy(userProfile = profile) }
+            setupRemoteListeners(profile.userId)
         }
 
         // Observe User Profile updates
@@ -64,7 +66,15 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
             repository.getUserProfileFlow().collect { profile ->
                 if (profile != null) {
                     _uiState.update { it.copy(userProfile = profile) }
+                    setupRemoteListeners(profile.userId)
                 }
+            }
+        }
+
+        // Observe incoming friend requests from FriendsRemoteManager
+        viewModelScope.launch {
+            FriendsRemoteManager.incomingRequests.collect { requests ->
+                _uiState.update { it.copy(incomingFriendRequests = requests) }
             }
         }
 
@@ -287,44 +297,92 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Friends Actions
-    fun addFriendByCode(code: String) {
+    private fun setupRemoteListeners(userId: String) {
+        FriendsRemoteManager.listenToIncomingFriendRequests(userId)
+        FriendsRemoteManager.listenToUserFriends(userId) { remoteFriends ->
+            viewModelScope.launch {
+                repository.syncFriendsFromRemote(remoteFriends)
+            }
+        }
+        FriendsRemoteManager.listenToAllUserGroups(userId) { remoteGroups ->
+            viewModelScope.launch {
+                repository.syncGroupsFromRemote(remoteGroups)
+            }
+        }
+    }
+
+    // Friends Actions (Friend Requests & Management)
+    fun sendFriendRequestByCode(code: String) {
         if (code.isBlank()) {
             _uiState.update { it.copy(errorMessage = "Ingresa un código de amigo válido") }
             return
         }
 
-        val myCode = _uiState.value.userProfile?.friendCode
-        if (code.trim().equals(myCode, ignoreCase = true)) {
-            _uiState.update { it.copy(errorMessage = "No puedes agregarte a ti mismo como amigo") }
+        val myProfile = _uiState.value.userProfile
+        if (myProfile == null) {
+            _uiState.update { it.copy(errorMessage = "Cargando perfil...") }
+            return
+        }
+
+        if (code.trim().equals(myProfile.friendCode, ignoreCase = true)) {
+            _uiState.update { it.copy(errorMessage = "No puedes enviarte una solicitud a ti mismo") }
             return
         }
 
         _uiState.update { it.copy(isConnecting = true, errorMessage = null) }
-        FriendsRemoteManager.findFriendByCode(code) { result ->
+        FriendsRemoteManager.sendFriendRequest(myProfile, code) { result ->
+            _uiState.update { it.copy(isConnecting = false) }
+            result.onSuccess { successMsg ->
+                _uiState.update {
+                    it.copy(
+                        toastMessage = successMsg,
+                        errorMessage = null
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update { it.copy(errorMessage = err.message ?: "Error al enviar solicitud") }
+            }
+        }
+    }
+
+    fun acceptFriendRequest(request: FriendRequest) {
+        val myProfile = _uiState.value.userProfile ?: return
+        _uiState.update { it.copy(isConnecting = true) }
+        FriendsRemoteManager.acceptFriendRequest(request, myProfile) { result ->
             _uiState.update { it.copy(isConnecting = false) }
             result.onSuccess { friend ->
                 viewModelScope.launch {
                     repository.addFriend(friend)
-                    _uiState.value.userProfile?.let { me ->
-                        FriendsRemoteManager.listenToFriendPair(me.userId, friend.id, friend.name)
-                    }
                     _uiState.update {
                         it.copy(
-                            toastMessage = "¡${friend.name} agregado como amigo!",
+                            toastMessage = "¡Ahora eres amigo de ${friend.name}!",
                             errorMessage = null
                         )
                     }
                 }
             }.onFailure { err ->
-                _uiState.update { it.copy(errorMessage = err.message ?: "Error al buscar amigo") }
+                _uiState.update { it.copy(errorMessage = err.message ?: "Error al aceptar solicitud") }
             }
         }
     }
 
+    fun rejectFriendRequest(request: FriendRequest) {
+        val myProfile = _uiState.value.userProfile ?: return
+        FriendsRemoteManager.rejectFriendRequest(request, myProfile.userId)
+        _uiState.update { it.copy(toastMessage = "Solicitud rechazada") }
+    }
+
     fun removeFriend(friendId: String) {
+        val myProfile = _uiState.value.userProfile
         viewModelScope.launch {
+            if (myProfile != null) {
+                FriendsRemoteManager.deleteFriendPair(myProfile.userId, friendId)
+            }
             repository.removeFriend(friendId)
+            if (_uiState.value.activeContext.type == ActivePlanningContext.ContextType.FRIEND &&
+                _uiState.value.activeContext.friend?.id == friendId) {
+                setActiveContext(ActivePlanningContext(type = ActivePlanningContext.ContextType.GLOBAL))
+            }
             _uiState.update { it.copy(toastMessage = "Amigo eliminado.") }
         }
     }
@@ -361,6 +419,23 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addFriendToGroup(groupCode: String, friend: Friend) {
+        _uiState.update { it.copy(isConnecting = true) }
+        FriendsRemoteManager.addFriendToGroupInCloud(groupCode, friend.id, friend.name) { result ->
+            _uiState.update { it.copy(isConnecting = false) }
+            result.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        toastMessage = "¡${friend.name} añadido al grupo!",
+                        errorMessage = null
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update { it.copy(errorMessage = err.message ?: "Error al añadir amigo al grupo") }
+            }
+        }
+    }
+
     fun joinGroupByCode(code: String) {
         val myProfile = _uiState.value.userProfile ?: return
         if (code.isBlank()) {
@@ -390,6 +465,10 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
     fun removeGroup(groupId: String) {
         viewModelScope.launch {
             repository.removeGroup(groupId)
+            if (_uiState.value.activeContext.type == ActivePlanningContext.ContextType.GROUP &&
+                _uiState.value.activeContext.group?.id == groupId) {
+                setActiveContext(ActivePlanningContext(type = ActivePlanningContext.ContextType.GLOBAL))
+            }
             _uiState.update { it.copy(toastMessage = "Has salido del grupo.") }
         }
     }
