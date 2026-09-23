@@ -20,5 +20,10 @@ data class PlanEntity(
     val budget: String = "",
     val tags: List<String> = emptyList(),
     val isCustom: Boolean = false,
+    val targetFriendId: String? = null,
+    val targetGroupId: String? = null,
+    val targetFriendName: String? = null,
+    val targetGroupName: String? = null,
+    val scope: String = "GLOBAL",
     val createdAt: Long = System.currentTimeMillis()
 )

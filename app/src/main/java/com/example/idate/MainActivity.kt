@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -21,7 +20,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -29,7 +27,7 @@ import com.example.idate.ui.IDateUiState
 import com.example.idate.ui.IDateViewModel
 import com.example.idate.ui.components.*
 import com.example.idate.ui.screens.CreatePlanModal
-import com.example.idate.ui.screens.LiveRoomModal
+import com.example.idate.ui.screens.FriendsHubModal
 import com.example.idate.ui.screens.PlanManagerSheet
 import com.example.idate.workers.SyncPlansWorker
 
@@ -117,11 +115,14 @@ fun IDateApp(
             Column(modifier = Modifier.fillMaxWidth().background(Color.White)) {
                 TopBar(
                     savedPlansCount = savedPlans.size,
-                    liveRoom = uiState.liveRoom,
+                    friendsCount = uiState.friendsList.size,
+                    groupsCount = uiState.groupsList.size,
+                    activeContext = uiState.activeContext,
                     onOpenSavedPlans = { viewModel.setShowSavedPlansSheet(true) },
-                    onOpenLiveRoom = { viewModel.setShowLiveRoomModal(true) },
+                    onOpenFriendsHub = { viewModel.setShowFriendsHubModal(true) },
                     onOpenCreatePlan = { viewModel.setShowCreatePlanModal(true) },
-                    onOpenPlanManager = { viewModel.setShowPlanManagerSheet(true) }
+                    onOpenPlanManager = { viewModel.setShowPlanManagerSheet(true) },
+                    onResetActiveContext = { viewModel.resetActiveContext() }
                 )
 
                 if (currentPlan != null && !isWideScreen) {
@@ -171,11 +172,13 @@ fun IDateApp(
         }
     }
 
-    // Realtime Multi-Device Match Dialog
+    // Realtime Collaborative Match Dialog (Friend or Group)
     realtimeMatchPlan?.let { plan ->
         RealtimeMatchDialog(
             plan = plan,
-            partnerName = uiState.liveRoom?.partnerName ?: "Tu Pareja",
+            partnerName = uiState.activeContext.displayName,
+            groupName = uiState.realtimeMatchGroupName,
+            likedUserNames = uiState.realtimeMatchLikers,
             onDismiss = { viewModel.dismissRealtimeMatchDialog() },
             onViewDetails = {
                 viewModel.dismissRealtimeMatchDialog()
@@ -222,27 +225,49 @@ fun IDateApp(
         )
     }
 
-    // Live Room Modal (Multi-Device Pairing)
-    if (uiState.showLiveRoomModal) {
-        LiveRoomModal(
-            liveRoom = uiState.liveRoom,
-            errorMessage = uiState.roomErrorMessage,
-            onDismiss = { viewModel.setShowLiveRoomModal(false) },
-            onCreateRoom = { hostName -> viewModel.createLiveRoom(hostName) },
-            onJoinRoom = { code, guestName -> viewModel.joinLiveRoom(code, guestName) },
-            onLeaveRoom = { viewModel.leaveLiveRoom() }
+    // Friends and Groups Hub Modal
+    if (uiState.showFriendsHubModal) {
+        FriendsHubModal(
+            userProfile = uiState.userProfile,
+            friendsList = uiState.friendsList,
+            groupsList = uiState.groupsList,
+            activeContext = uiState.activeContext,
+            errorMessage = uiState.errorMessage,
+            onDismiss = { viewModel.setShowFriendsHubModal(false) },
+            onAddFriendByCode = { code -> viewModel.addFriendByCode(code) },
+            onRemoveFriend = { friendId -> viewModel.removeFriend(friendId) },
+            onCreateGroup = { name, desc, emoji -> viewModel.createGroup(name, desc, emoji) },
+            onJoinGroupByCode = { code -> viewModel.joinGroupByCode(code) },
+            onRemoveGroup = { groupId -> viewModel.removeGroup(groupId) },
+            onUpdateProfile = { name, emoji, bio -> viewModel.updateUserProfile(name, emoji, bio) },
+            onSelectContext = { context -> viewModel.setActiveContext(context) }
         )
     }
 
-    // Create Custom Plan Modal
+    // Create Custom Plan Modal with Friend/Group targeting
     if (uiState.showCreatePlanModal) {
         CreatePlanModal(
+            friendsList = uiState.friendsList,
+            groupsList = uiState.groupsList,
             onDismiss = { viewModel.setShowCreatePlanModal(false) },
-            onCreatePlan = { title, category, description, location, duration, budget, tags, imageUrl, imageResName ->
-                viewModel.addCustomPlan(title, category, description, location, duration, budget, tags, imageUrl, imageResName)
+            onCreatePlan = { title, category, description, location, duration, budget, tags, imageUrl, imageResName, targetFriendId, targetGroupId, targetFriendName, targetGroupName, scope ->
+                viewModel.addCustomPlan(
+                    title = title,
+                    category = category,
+                    description = description,
+                    location = location,
+                    duration = duration,
+                    budget = budget,
+                    tags = tags,
+                    imageUrl = imageUrl,
+                    imageResName = imageResName,
+                    targetFriendId = targetFriendId,
+                    targetGroupId = targetGroupId,
+                    targetFriendName = targetFriendName,
+                    targetGroupName = targetGroupName,
+                    scope = scope
+                )
             }
         )
     }
 }
-
-

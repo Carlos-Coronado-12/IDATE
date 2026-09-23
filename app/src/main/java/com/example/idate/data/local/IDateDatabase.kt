@@ -5,20 +5,23 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.example.idate.data.local.dao.FriendDao
 import com.example.idate.data.local.dao.LikedPlanDao
 import com.example.idate.data.local.dao.MatchSessionDao
 import com.example.idate.data.local.dao.PlanDao
-import com.example.idate.data.local.entity.LikedPlanEntity
-import com.example.idate.data.local.entity.MatchSessionEntity
-import com.example.idate.data.local.entity.PlanEntity
+import com.example.idate.data.local.entity.*
 
 @Database(
     entities = [
         PlanEntity::class,
         LikedPlanEntity::class,
-        MatchSessionEntity::class
+        MatchSessionEntity::class,
+        UserProfileEntity::class,
+        FriendEntity::class,
+        GroupEntity::class,
+        TargetLikeEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -26,6 +29,7 @@ abstract class IDateDatabase : RoomDatabase() {
     abstract fun planDao(): PlanDao
     abstract fun likedPlanDao(): LikedPlanDao
     abstract fun matchSessionDao(): MatchSessionDao
+    abstract fun friendDao(): FriendDao
 
     companion object {
         @Volatile

@@ -7,10 +7,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.idate.R
 import com.example.idate.data.local.IDateDatabase
-import com.example.idate.data.local.entity.LikedPlanEntity
-import com.example.idate.data.local.entity.PlanEntity
-import com.example.idate.model.Plan
-import com.example.idate.model.SamplePlans
+import com.example.idate.data.local.entity.*
+import com.example.idate.data.remote.FriendsRemoteManager
+import com.example.idate.model.*
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
@@ -20,12 +19,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class IDateRepository(context: Context) {
     private val database = IDateDatabase.getDatabase(context)
     private val planDao = database.planDao()
     private val likedPlanDao = database.likedPlanDao()
-    private val matchSessionDao = database.matchSessionDao()
+    private val friendDao = database.friendDao()
 
     private val realtimeDb: FirebaseDatabase by lazy {
         try {
@@ -38,19 +38,161 @@ class IDateRepository(context: Context) {
     }
 
     suspend fun initializeDefaultDataIfNeeded() {
-        // Keeps user-created database without auto-inserting sample plans
+        // Keeps user database prepared
     }
 
+    suspend fun getOrCreateUserProfile(): UserProfile {
+        val existing = friendDao.getUserProfileOnce()
+        if (existing != null) {
+            return UserProfile(
+                userId = existing.userId,
+                name = existing.name,
+                friendCode = existing.friendCode,
+                avatarEmoji = existing.avatarEmoji,
+                bio = existing.bio
+            )
+        }
+
+        val newUserId = UUID.randomUUID().toString().substring(0, 8)
+        val newCode = FriendsRemoteManager.generateUniqueCode("ID")
+        val defaultProfile = UserProfile(
+            userId = newUserId,
+            name = "Usuario IDATE",
+            friendCode = newCode,
+            avatarEmoji = "😎",
+            bio = "¡Listo para salir y hacer los mejores planes!"
+        )
+
+        friendDao.insertOrUpdateProfile(
+            UserProfileEntity(
+                userId = defaultProfile.userId,
+                name = defaultProfile.name,
+                friendCode = defaultProfile.friendCode,
+                avatarEmoji = defaultProfile.avatarEmoji,
+                bio = defaultProfile.bio
+            )
+        )
+        FriendsRemoteManager.syncUserProfileToCloud(defaultProfile)
+        return defaultProfile
+    }
+
+    fun getUserProfileFlow(): Flow<UserProfile?> {
+        return friendDao.getUserProfile().map { entity ->
+            entity?.let {
+                UserProfile(
+                    userId = it.userId,
+                    name = it.name,
+                    friendCode = it.friendCode,
+                    avatarEmoji = it.avatarEmoji,
+                    bio = it.bio
+                )
+            }
+        }
+    }
+
+    suspend fun updateUserProfile(name: String, avatarEmoji: String, bio: String) {
+        val current = getOrCreateUserProfile()
+        val updated = current.copy(name = name, avatarEmoji = avatarEmoji, bio = bio)
+        friendDao.insertOrUpdateProfile(
+            UserProfileEntity(
+                userId = updated.userId,
+                name = updated.name,
+                friendCode = updated.friendCode,
+                avatarEmoji = updated.avatarEmoji,
+                bio = updated.bio
+            )
+        )
+        FriendsRemoteManager.syncUserProfileToCloud(updated)
+    }
+
+    // Friends Management
+    fun getAllFriends(): Flow<List<Friend>> {
+        return friendDao.getAllFriends().map { list ->
+            list.map {
+                Friend(
+                    id = it.id,
+                    friendCode = it.friendCode,
+                    name = it.name,
+                    avatarEmoji = it.avatarEmoji,
+                    status = try { FriendStatus.valueOf(it.status) } catch (_: Exception) { FriendStatus.ACCEPTED },
+                    mutualMatchesCount = it.mutualMatchesCount,
+                    isOnline = it.isOnline,
+                    createdAt = it.createdAt
+                )
+            }
+        }
+    }
+
+    suspend fun addFriend(friend: Friend) {
+        friendDao.insertFriend(
+            FriendEntity(
+                id = friend.id,
+                friendCode = friend.friendCode,
+                name = friend.name,
+                avatarEmoji = friend.avatarEmoji,
+                status = friend.status.name,
+                mutualMatchesCount = friend.mutualMatchesCount,
+                isOnline = friend.isOnline,
+                createdAt = friend.createdAt
+            )
+        )
+    }
+
+    suspend fun removeFriend(friendId: String) {
+        friendDao.deleteFriend(friendId)
+    }
+
+    // Groups Management
+    fun getAllGroups(): Flow<List<FriendGroup>> {
+        return friendDao.getAllGroups().map { list ->
+            list.map {
+                FriendGroup(
+                    id = it.id,
+                    groupCode = it.groupCode,
+                    name = it.name,
+                    description = it.description,
+                    iconEmoji = it.iconEmoji,
+                    colorHex = it.colorHex,
+                    memberCount = it.memberCount,
+                    memberNames = it.memberNames,
+                    matchedPlansCount = it.matchedPlansCount,
+                    createdBy = it.createdBy,
+                    createdAt = it.createdAt
+                )
+            }
+        }
+    }
+
+    suspend fun addGroup(group: FriendGroup) {
+        friendDao.insertGroup(
+            GroupEntity(
+                id = group.id,
+                groupCode = group.groupCode,
+                name = group.name,
+                description = group.description,
+                iconEmoji = group.iconEmoji,
+                colorHex = group.colorHex,
+                memberCount = group.memberCount,
+                memberNames = group.memberNames,
+                matchedPlansCount = group.matchedPlansCount,
+                createdBy = group.createdBy,
+                createdAt = group.createdAt
+            )
+        )
+    }
+
+    suspend fun removeGroup(groupId: String) {
+        friendDao.deleteGroup(groupId)
+    }
+
+    // Plans Sincronization with Target Support
     fun startRealtimePlansSync(scope: CoroutineScope) {
         try {
             realtimeDb.getReference("plans").addValueEventListener(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            if (!snapshot.exists()) {
-                                // If database in cloud is empty and local custom plans exist, or vice-versa
-                                return@launch
-                            }
+                            if (!snapshot.exists()) return@launch
 
                             val remoteEntities = mutableListOf<PlanEntity>()
                             for (child in snapshot.children) {
@@ -66,6 +208,11 @@ class IDateRepository(context: Context) {
                                 val imageUrl = child.child("imageUrl").getValue(String::class.java) ?: ""
                                 val imageResName = child.child("imageResName").getValue(String::class.java) ?: "plan_legos"
                                 val emoji = child.child("emoji").getValue(String::class.java) ?: getEmojiForCategory(category)
+                                val targetFriendId = child.child("targetFriendId").getValue(String::class.java)
+                                val targetGroupId = child.child("targetGroupId").getValue(String::class.java)
+                                val targetFriendName = child.child("targetFriendName").getValue(String::class.java)
+                                val targetGroupName = child.child("targetGroupName").getValue(String::class.java)
+                                val scopeStr = child.child("scope").getValue(String::class.java) ?: "GLOBAL"
 
                                 val tagsList = mutableListOf<String>()
                                 child.child("tags").children.forEach { tagSnap ->
@@ -87,7 +234,12 @@ class IDateRepository(context: Context) {
                                         duration = duration,
                                         budget = budget,
                                         tags = tagsList,
-                                        isCustom = true
+                                        isCustom = true,
+                                        targetFriendId = targetFriendId,
+                                        targetGroupId = targetGroupId,
+                                        targetFriendName = targetFriendName,
+                                        targetGroupName = targetGroupName,
+                                        scope = scopeStr
                                     )
                                 )
                             }
@@ -95,7 +247,6 @@ class IDateRepository(context: Context) {
                             if (remoteEntities.isNotEmpty()) {
                                 planDao.insertPlans(remoteEntities)
 
-                                // Remove local plans that were deleted from Firebase Realtime Database
                                 val remoteIds = remoteEntities.map { it.id }.toSet()
                                 val localPlans = planDao.getAllPlansList()
                                 for (local in localPlans) {
@@ -105,7 +256,7 @@ class IDateRepository(context: Context) {
                                 }
                             }
                         } catch (e: Exception) {
-                            android.util.Log.e("IDATE_SYNC", "Error al procesar sincronización: ${e.message}")
+                            android.util.Log.e("IDATE_SYNC", "Error sincronización: ${e.message}")
                         }
                     }
                 }
@@ -138,7 +289,6 @@ class IDateRepository(context: Context) {
     suspend fun restoreDefaultPlans() {
         val entities = SamplePlans.defaultPlans.map { it.toEntity() }
         planDao.insertPlans(entities)
-        // Upload defaults to Firebase so other devices get them too
         entities.forEach { entity ->
             val planMap = mapOf(
                 "id" to entity.id,
@@ -153,6 +303,7 @@ class IDateRepository(context: Context) {
                 "imageUrl" to entity.imageUrl,
                 "imageResName" to entity.imageResName,
                 "emoji" to entity.iconEmoji,
+                "scope" to "GLOBAL",
                 "createdAt" to entity.createdAt
             )
             realtimeDb.getReference("plans").child(entity.id.toString()).setValue(planMap)
@@ -199,9 +350,13 @@ class IDateRepository(context: Context) {
         budget: String,
         tags: List<String>,
         imageUrl: String = "",
-        imageResName: String = "plan_legos"
+        imageResName: String = "plan_legos",
+        targetFriendId: String? = null,
+        targetGroupId: String? = null,
+        targetFriendName: String? = null,
+        targetGroupName: String? = null,
+        scope: PlanScope = PlanScope.GLOBAL
     ): Long {
-        // Generate unique ID across multiple devices
         val generatedId = ((System.currentTimeMillis() % 1_000_000_000L).toInt()) + kotlin.random.Random.nextInt(100, 999)
 
         val entity = PlanEntity(
@@ -218,13 +373,17 @@ class IDateRepository(context: Context) {
             imageResName = imageResName,
             iconName = getIconNameForCategory(category),
             iconEmoji = getEmojiForCategory(category),
-            isCustom = true
+            isCustom = true,
+            targetFriendId = targetFriendId,
+            targetGroupId = targetGroupId,
+            targetFriendName = targetFriendName,
+            targetGroupName = targetGroupName,
+            scope = scope.name
         )
         planDao.insertPlan(entity)
 
-        // Broadcast to Firebase Realtime Database
         try {
-            val planMap = mapOf(
+            val planMap = mutableMapOf<String, Any>(
                 "id" to generatedId,
                 "title" to title,
                 "category" to category,
@@ -237,21 +396,15 @@ class IDateRepository(context: Context) {
                 "imageUrl" to imageUrl,
                 "imageResName" to imageResName,
                 "emoji" to getEmojiForCategory(category),
+                "scope" to scope.name,
                 "createdAt" to System.currentTimeMillis()
             )
+            targetFriendId?.let { planMap["targetFriendId"] = it }
+            targetGroupId?.let { planMap["targetGroupId"] = it }
+            targetFriendName?.let { planMap["targetFriendName"] = it }
+            targetGroupName?.let { planMap["targetGroupName"] = it }
 
             realtimeDb.getReference("plans").child(generatedId.toString()).setValue(planMap)
-                .addOnSuccessListener {
-                    android.util.Log.d("IDATE_FIREBASE", "Plan $title sincronizado a Realtime Database con éxito!")
-                }
-                .addOnFailureListener { err ->
-                    android.util.Log.e("IDATE_FIREBASE", "Error al subir a Realtime Database: ${err.message}")
-                }
-
-            // Sync to Firestore concurrently
-            val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-            firestore.collection("plans").document(generatedId.toString())
-                .set(planMap)
         } catch (e: Exception) {
             android.util.Log.e("IDATE_FIREBASE", "Excepción al sincronizar plan: ${e.message}")
         }
@@ -300,11 +453,22 @@ class IDateRepository(context: Context) {
             duration = this.duration,
             budget = this.budget,
             tags = this.tags,
-            isCustom = false
+            isCustom = false,
+            targetFriendId = this.targetFriendId,
+            targetGroupId = this.targetGroupId,
+            targetFriendName = this.targetFriendName,
+            targetGroupName = this.targetGroupName,
+            scope = this.scope.name
         )
     }
 
     private fun PlanEntity.toDomain(): Plan {
+        val planScope = try {
+            PlanScope.valueOf(this.scope)
+        } catch (_: Exception) {
+            PlanScope.GLOBAL
+        }
+
         return Plan(
             id = this.id,
             category = this.category,
@@ -319,7 +483,12 @@ class IDateRepository(context: Context) {
             duration = this.duration,
             budget = this.budget,
             tags = this.tags,
-            categoryColor = Color.Red
+            categoryColor = Color.Red,
+            targetFriendId = this.targetFriendId,
+            targetGroupId = this.targetGroupId,
+            targetFriendName = this.targetFriendName,
+            targetGroupName = this.targetGroupName,
+            scope = planScope
         )
     }
 

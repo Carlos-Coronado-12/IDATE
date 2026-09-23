@@ -6,11 +6,10 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.idate.data.remote.RealtimeSessionManager
-import com.example.idate.data.remote.model.LiveRoom
-import com.example.idate.data.remote.model.LiveSessionEvent
+import com.example.idate.data.remote.FriendEvent
+import com.example.idate.data.remote.FriendsRemoteManager
 import com.example.idate.data.repository.IDateRepository
-import com.example.idate.model.Plan
+import com.example.idate.model.*
 import com.example.idate.notifications.NotificationHelper
 import com.example.idate.ui.components.VerticalSwipeDirection
 import kotlinx.coroutines.flow.*
@@ -24,14 +23,19 @@ data class IDateUiState(
     val savedPlans: List<Plan> = emptyList(),
     val matchedPlan: Plan? = null,
     val realtimeMatchPlan: Plan? = null,
+    val realtimeMatchLikers: List<String> = emptyList(),
+    val realtimeMatchGroupName: String? = null,
     val detailedPlan: Plan? = null,
     val showSavedPlansSheet: Boolean = false,
-    val showLiveRoomModal: Boolean = false,
+    val showFriendsHubModal: Boolean = false,
     val showCreatePlanModal: Boolean = false,
     val showPlanManagerSheet: Boolean = false,
-    val liveRoom: LiveRoom? = null,
-    val isConnectingRoom: Boolean = false,
-    val roomErrorMessage: String? = null,
+    val userProfile: UserProfile? = null,
+    val friendsList: List<Friend> = emptyList(),
+    val groupsList: List<FriendGroup> = emptyList(),
+    val activeContext: ActivePlanningContext = ActivePlanningContext(),
+    val isConnecting: Boolean = false,
+    val errorMessage: String? = null,
     val toastMessage: String? = null
 )
 
@@ -46,19 +50,57 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
     private val swipeHistory = mutableListOf<Int>()
 
     init {
-        // Start Realtime Multi-Device synchronization for Plans
+        // Start Realtime synchronization for Plans
         repository.startRealtimePlansSync(viewModelScope)
 
-        // Observe plans from Room
+        // Initialize / Load User Profile
         viewModelScope.launch {
-            repository.getAllPlans().collect { planList ->
-                _uiState.update { current ->
-                    val filtered = filterPlans(planList, current.selectedCategory)
-                    current.copy(plans = planList, filteredPlans = filtered)
+            val profile = repository.getOrCreateUserProfile()
+            _uiState.update { it.copy(userProfile = profile) }
+        }
+
+        // Observe User Profile updates
+        viewModelScope.launch {
+            repository.getUserProfileFlow().collect { profile ->
+                if (profile != null) {
+                    _uiState.update { it.copy(userProfile = profile) }
                 }
             }
         }
 
+        // Observe Friends list
+        viewModelScope.launch {
+            repository.getAllFriends().collect { friends ->
+                _uiState.update { it.copy(friendsList = friends) }
+                // Start listening to friend interactions for real-time matches
+                val myProfile = _uiState.value.userProfile
+                if (myProfile != null) {
+                    friends.forEach { friend ->
+                        FriendsRemoteManager.listenToFriendPair(myProfile.userId, friend.id, friend.name)
+                    }
+                }
+            }
+        }
+
+        // Observe Groups list
+        viewModelScope.launch {
+            repository.getAllGroups().collect { groups ->
+                _uiState.update { it.copy(groupsList = groups) }
+                groups.forEach { group ->
+                    FriendsRemoteManager.listenToGroup(group.groupCode, group.name)
+                }
+            }
+        }
+
+        // Observe Plans from Room
+        viewModelScope.launch {
+            repository.getAllPlans().collect { planList ->
+                _uiState.update { current ->
+                    val filtered = applyFilter(planList, current.selectedCategory, current.activeContext)
+                    current.copy(plans = planList, filteredPlans = filtered)
+                }
+            }
+        }
 
         // Observe liked plans from Room
         viewModelScope.launch {
@@ -67,46 +109,58 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Observe Realtime Room
+        // Observe Realtime Friend / Group Events
         viewModelScope.launch {
-            RealtimeSessionManager.currentRoom.collect { room ->
-                _uiState.update { it.copy(liveRoom = room) }
-            }
-        }
-
-        // Observe Realtime Events (Matches, Join)
-        viewModelScope.launch {
-            RealtimeSessionManager.sessionEvents.collect { event ->
+            FriendsRemoteManager.friendEvents.collect { event ->
                 when (event) {
-                    is LiveSessionEvent.PartnerJoined -> {
-                        triggerHaptic(50)
-                        notificationHelper.showPartnerJoinedNotification(
-                            event.partnerName,
-                            _uiState.value.liveRoom?.roomCode ?: ""
-                        )
-                        _uiState.update { it.copy(toastMessage = "${event.partnerName} se unió a la sala") }
-                    }
-                    is LiveSessionEvent.RealtimeMatchFound -> {
+                    is FriendEvent.FriendMatchFound -> {
                         triggerHaptic(300)
                         val plan = _uiState.value.plans.find { it.id == event.planId }
-                        if (plan != null) {
-                            notificationHelper.showMatchNotification(
-                                plan.title,
-                                _uiState.value.liveRoom?.partnerName ?: "Tu pareja"
+                        notificationHelper.showMatchNotification(
+                            plan?.title ?: "Plan en común",
+                            event.friendName
+                        )
+                        _uiState.update {
+                            it.copy(
+                                realtimeMatchPlan = plan,
+                                realtimeMatchLikers = listOf(it.userProfile?.name ?: "Tú", event.friendName),
+                                realtimeMatchGroupName = null,
+                                toastMessage = "¡Coincidencia con ${event.friendName}!"
                             )
-                            _uiState.update {
-                                it.copy(realtimeMatchPlan = plan)
-                            }
                         }
                     }
-                    is LiveSessionEvent.PartnerSwiped -> {
-                        // Subtle update
+                    is FriendEvent.GroupMatchFound -> {
+                        triggerHaptic(300)
+                        val plan = _uiState.value.plans.find { it.id == event.planId }
+                        notificationHelper.showMatchNotification(
+                            plan?.title ?: "Plan grupal",
+                            event.groupName
+                        )
+                        val likersText = if (event.likedUserNames.isNotEmpty()) {
+                            event.likedUserNames.joinToString(" y ")
+                        } else {
+                            "${event.voteCount} personas"
+                        }
+                        _uiState.update {
+                            it.copy(
+                                realtimeMatchPlan = plan,
+                                realtimeMatchLikers = event.likedUserNames,
+                                realtimeMatchGroupName = event.groupName,
+                                toastMessage = "¡A $likersText les gustó '${plan?.title ?: "el plan"}' en ${event.groupName}!"
+                            )
+                        }
                     }
-                    is LiveSessionEvent.Error -> {
-                        _uiState.update { it.copy(roomErrorMessage = event.message) }
+                    is FriendEvent.FriendRequestAccepted -> {
+                        _uiState.update { it.copy(toastMessage = "${event.friendName} ahora es tu amigo") }
                     }
-                    is LiveSessionEvent.SessionEnded -> {
-                        _uiState.update { it.copy(toastMessage = "La sesión en vivo ha finalizado") }
+                    is FriendEvent.MemberJoinedGroup -> {
+                        _uiState.update { it.copy(toastMessage = "${event.memberName} se unió a ${event.groupName}") }
+                    }
+                    is FriendEvent.Info -> {
+                        _uiState.update { it.copy(toastMessage = event.message) }
+                    }
+                    is FriendEvent.Error -> {
+                        _uiState.update { it.copy(errorMessage = event.message) }
                     }
                 }
             }
@@ -127,9 +181,28 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Broadcast to Realtime Room if connected
-        if (_uiState.value.liveRoom != null) {
-            RealtimeSessionManager.submitVote(currentPlan.id, isLike, currentPlan.title)
+        val myProfile = _uiState.value.userProfile
+        val activeCtx = _uiState.value.activeContext
+
+        // Collaborate with Friend if active
+        if (myProfile != null && activeCtx.type == ActivePlanningContext.ContextType.FRIEND && activeCtx.friend != null) {
+            FriendsRemoteManager.submitFriendVote(
+                myUserId = myProfile.userId,
+                friendId = activeCtx.friend.id,
+                planId = currentPlan.id,
+                isLike = isLike
+            )
+        }
+
+        // Collaborate with Group if active
+        if (myProfile != null && activeCtx.type == ActivePlanningContext.ContextType.GROUP && activeCtx.group != null) {
+            FriendsRemoteManager.submitGroupVote(
+                groupCode = activeCtx.group.groupCode,
+                userId = myProfile.userId,
+                userName = myProfile.name,
+                planId = currentPlan.id,
+                isLike = isLike
+            )
         }
 
         _uiState.update { it.copy(currentIndex = it.currentIndex + 1) }
@@ -145,7 +218,7 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectCategory(category: String) {
         _uiState.update { current ->
-            val filtered = filterPlans(current.plans, category)
+            val filtered = applyFilter(current.plans, category, current.activeContext)
             current.copy(
                 selectedCategory = category,
                 filteredPlans = filtered,
@@ -155,11 +228,50 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
         swipeHistory.clear()
     }
 
-    private fun filterPlans(plans: List<Plan>, category: String): List<Plan> {
-        return if (category == "Todos" || category.isBlank()) {
+    fun setActiveContext(context: ActivePlanningContext) {
+        _uiState.update { current ->
+            val filtered = applyFilter(current.plans, current.selectedCategory, context)
+            current.copy(
+                activeContext = context,
+                filteredPlans = filtered,
+                currentIndex = 0,
+                toastMessage = "Modo activado: ${context.displayName}"
+            )
+        }
+        swipeHistory.clear()
+    }
+
+    fun resetActiveContext() {
+        setActiveContext(ActivePlanningContext())
+    }
+
+    private fun applyFilter(
+        plans: List<Plan>,
+        category: String,
+        context: ActivePlanningContext
+    ): List<Plan> {
+        val categoryFiltered = if (category == "Todos" || category.isBlank()) {
             plans
         } else {
             plans.filter { it.category.equals(category, ignoreCase = true) }
+        }
+
+        return when (context.type) {
+            ActivePlanningContext.ContextType.GLOBAL -> {
+                categoryFiltered.filter { it.scope == PlanScope.GLOBAL }
+            }
+            ActivePlanningContext.ContextType.FRIEND -> {
+                val friendId = context.friend?.id
+                categoryFiltered.filter {
+                    it.scope == PlanScope.GLOBAL || (it.scope == PlanScope.FRIEND_ONLY && it.targetFriendId == friendId)
+                }
+            }
+            ActivePlanningContext.ContextType.GROUP -> {
+                val groupId = context.group?.id
+                categoryFiltered.filter {
+                    it.scope == PlanScope.GLOBAL || (it.scope == PlanScope.GROUP_ONLY && it.targetGroupId == groupId)
+                }
+            }
         }
     }
 
@@ -175,40 +287,118 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createLiveRoom(hostName: String) {
-        val room = RealtimeSessionManager.createRoom(hostName)
-        _uiState.update {
-            it.copy(
-                liveRoom = room,
-                roomErrorMessage = null,
-                toastMessage = "Sala creada: ${room.roomCode}"
-            )
-        }
-    }
-
-    fun joinLiveRoom(roomCode: String, guestName: String) {
-        if (roomCode.isBlank()) {
-            _uiState.update { it.copy(roomErrorMessage = "Por favor ingresa un código de sala válido") }
+    // Friends Actions
+    fun addFriendByCode(code: String) {
+        if (code.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Ingresa un código de amigo válido") }
             return
         }
 
-        val result = RealtimeSessionManager.joinRoom(roomCode, guestName)
-        result.onSuccess { room ->
-            _uiState.update {
-                it.copy(
-                    liveRoom = room,
-                    roomErrorMessage = null,
-                    toastMessage = "¡Te has unido a la sala ${room.roomCode}!"
-                )
+        val myCode = _uiState.value.userProfile?.friendCode
+        if (code.trim().equals(myCode, ignoreCase = true)) {
+            _uiState.update { it.copy(errorMessage = "No puedes agregarte a ti mismo como amigo") }
+            return
+        }
+
+        _uiState.update { it.copy(isConnecting = true, errorMessage = null) }
+        FriendsRemoteManager.findFriendByCode(code) { result ->
+            _uiState.update { it.copy(isConnecting = false) }
+            result.onSuccess { friend ->
+                viewModelScope.launch {
+                    repository.addFriend(friend)
+                    _uiState.value.userProfile?.let { me ->
+                        FriendsRemoteManager.listenToFriendPair(me.userId, friend.id, friend.name)
+                    }
+                    _uiState.update {
+                        it.copy(
+                            toastMessage = "¡${friend.name} agregado como amigo!",
+                            errorMessage = null
+                        )
+                    }
+                }
+            }.onFailure { err ->
+                _uiState.update { it.copy(errorMessage = err.message ?: "Error al buscar amigo") }
             }
-        }.onFailure { err ->
-            _uiState.update { it.copy(roomErrorMessage = err.message ?: "Error al unirse a la sala") }
         }
     }
 
-    fun leaveLiveRoom() {
-        RealtimeSessionManager.leaveRoom()
-        _uiState.update { it.copy(liveRoom = null) }
+    fun removeFriend(friendId: String) {
+        viewModelScope.launch {
+            repository.removeFriend(friendId)
+            _uiState.update { it.copy(toastMessage = "Amigo eliminado.") }
+        }
+    }
+
+    // Groups Actions
+    fun createGroup(name: String, description: String, iconEmoji: String) {
+        val myProfile = _uiState.value.userProfile ?: return
+        val newCode = FriendsRemoteManager.generateUniqueCode("GRP")
+        val newGroup = FriendGroup(
+            id = "grp_${System.currentTimeMillis()}",
+            groupCode = newCode,
+            name = name.trim(),
+            description = description.trim(),
+            iconEmoji = iconEmoji,
+            createdBy = myProfile.userId
+        )
+
+        _uiState.update { it.copy(isConnecting = true) }
+        FriendsRemoteManager.createGroupInCloud(newGroup, myProfile.userId, myProfile.name) { result ->
+            _uiState.update { it.copy(isConnecting = false) }
+            result.onSuccess { group ->
+                viewModelScope.launch {
+                    repository.addGroup(group)
+                    _uiState.update {
+                        it.copy(
+                            toastMessage = "¡Grupo '${group.name}' creado con código ${group.groupCode}!",
+                            errorMessage = null
+                        )
+                    }
+                }
+            }.onFailure { err ->
+                _uiState.update { it.copy(errorMessage = err.message ?: "Error al crear grupo") }
+            }
+        }
+    }
+
+    fun joinGroupByCode(code: String) {
+        val myProfile = _uiState.value.userProfile ?: return
+        if (code.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Ingresa un código de grupo válido") }
+            return
+        }
+
+        _uiState.update { it.copy(isConnecting = true, errorMessage = null) }
+        FriendsRemoteManager.joinGroupByCode(code, myProfile.userId, myProfile.name) { result ->
+            _uiState.update { it.copy(isConnecting = false) }
+            result.onSuccess { group ->
+                viewModelScope.launch {
+                    repository.addGroup(group)
+                    _uiState.update {
+                        it.copy(
+                            toastMessage = "¡Te has unido al grupo '${group.name}'!",
+                            errorMessage = null
+                        )
+                    }
+                }
+            }.onFailure { err ->
+                _uiState.update { it.copy(errorMessage = err.message ?: "Error al unirse al grupo") }
+            }
+        }
+    }
+
+    fun removeGroup(groupId: String) {
+        viewModelScope.launch {
+            repository.removeGroup(groupId)
+            _uiState.update { it.copy(toastMessage = "Has salido del grupo.") }
+        }
+    }
+
+    fun updateUserProfile(name: String, avatarEmoji: String, bio: String) {
+        viewModelScope.launch {
+            repository.updateUserProfile(name, avatarEmoji, bio)
+            _uiState.update { it.copy(toastMessage = "Perfil actualizado correctamente") }
+        }
     }
 
     fun addCustomPlan(
@@ -220,7 +410,12 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
         budget: String,
         tags: List<String>,
         imageUrl: String = "",
-        imageResName: String = "plan_legos"
+        imageResName: String = "plan_legos",
+        targetFriendId: String? = null,
+        targetGroupId: String? = null,
+        targetFriendName: String? = null,
+        targetGroupName: String? = null,
+        scope: PlanScope = PlanScope.GLOBAL
     ) {
         viewModelScope.launch {
             repository.addCustomPlan(
@@ -232,7 +427,12 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
                 budget = budget,
                 tags = tags,
                 imageUrl = imageUrl,
-                imageResName = imageResName
+                imageResName = imageResName,
+                targetFriendId = targetFriendId,
+                targetGroupId = targetGroupId,
+                targetFriendName = targetFriendName,
+                targetGroupName = targetGroupName,
+                scope = scope
             )
             _uiState.update {
                 it.copy(
@@ -251,8 +451,8 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(showSavedPlansSheet = show) }
     }
 
-    fun setShowLiveRoomModal(show: Boolean) {
-        _uiState.update { it.copy(showLiveRoomModal = show) }
+    fun setShowFriendsHubModal(show: Boolean) {
+        _uiState.update { it.copy(showFriendsHubModal = show) }
     }
 
     fun setShowCreatePlanModal(show: Boolean) {
@@ -299,7 +499,6 @@ class IDateViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissMatchedBanner() {
         _uiState.update { it.copy(matchedPlan = null) }
     }
-
 
     fun dismissRealtimeMatchDialog() {
         _uiState.update { it.copy(realtimeMatchPlan = null) }

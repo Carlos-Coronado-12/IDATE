@@ -21,7 +21,12 @@ data class Plan(
     val duration: String = "",
     val budget: String = "",
     val tags: List<String> = emptyList(),
-    val categoryColor: Color = Color.Red
+    val categoryColor: Color = Color.Red,
+    val targetFriendId: String? = null,
+    val targetGroupId: String? = null,
+    val targetFriendName: String? = null,
+    val targetGroupName: String? = null,
+    val scope: PlanScope = PlanScope.GLOBAL
 )
 
 object SamplePlans {

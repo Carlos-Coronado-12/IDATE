@@ -17,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -29,6 +28,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.idate.R
+import com.example.idate.model.Friend
+import com.example.idate.model.FriendGroup
+import com.example.idate.model.PlanScope
 
 data class PresetImageOption(
     val name: String,
@@ -39,6 +41,8 @@ data class PresetImageOption(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreatePlanModal(
+    friendsList: List<Friend> = emptyList(),
+    groupsList: List<FriendGroup> = emptyList(),
     onDismiss: () -> Unit,
     onCreatePlan: (
         title: String,
@@ -49,7 +53,12 @@ fun CreatePlanModal(
         budget: String,
         tags: List<String>,
         imageUrl: String,
-        imageResName: String
+        imageResName: String,
+        targetFriendId: String?,
+        targetGroupId: String?,
+        targetFriendName: String?,
+        targetGroupName: String?,
+        scope: PlanScope
     ) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
@@ -59,7 +68,14 @@ fun CreatePlanModal(
     var duration by remember { mutableStateOf("") }
     var budget by remember { mutableStateOf("") }
     var tagInput by remember { mutableStateOf("") }
-    val tags = remember { mutableStateListOf("Romántico", "Nuevo") }
+    val tags = remember { mutableStateListOf("Favorito", "Nuevo") }
+
+    // Scope selection (Global, Friend, Group)
+    var selectedScope by remember { mutableStateOf(PlanScope.GLOBAL) }
+    var selectedFriend by remember { mutableStateOf<Friend?>(null) }
+    var selectedGroup by remember { mutableStateOf<FriendGroup?>(null) }
+    var friendDropdownExpanded by remember { mutableStateOf(false) }
+    var groupDropdownExpanded by remember { mutableStateOf(false) }
 
     // Image selection state
     val presetImages = remember {
@@ -123,7 +139,12 @@ fun CreatePlanModal(
                 budget.trim(),
                 tags.toList(),
                 customImageUrl.trim(),
-                selectedPresetResName
+                selectedPresetResName,
+                if (selectedScope == PlanScope.FRIEND_ONLY) selectedFriend?.id else null,
+                if (selectedScope == PlanScope.GROUP_ONLY) selectedGroup?.id else null,
+                if (selectedScope == PlanScope.FRIEND_ONLY) selectedFriend?.name else null,
+                if (selectedScope == PlanScope.GROUP_ONLY) selectedGroup?.name else null,
+                selectedScope
             )
         }
     }
@@ -169,7 +190,7 @@ fun CreatePlanModal(
                             )
                         }
                         Text(
-                            text = "Nuevo Plan de Cita",
+                            text = "Nuevo Plan Personalizado",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Black
@@ -194,6 +215,152 @@ fun CreatePlanModal(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    // Scope Selector (Global, Friend, Group)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFFF3E5F5).copy(alpha = 0.5f))
+                            .border(1.dp, Color(0xFFCE93D8), RoundedCornerShape(14.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            "¿Para quién es este plan?",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color(0xFF6A1B9A)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = selectedScope == PlanScope.GLOBAL,
+                                onClick = { selectedScope = PlanScope.GLOBAL },
+                                label = { Text("🌍 General", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = selectedScope == PlanScope.FRIEND_ONLY,
+                                onClick = {
+                                    selectedScope = PlanScope.FRIEND_ONLY
+                                    if (selectedFriend == null && friendsList.isNotEmpty()) {
+                                        selectedFriend = friendsList.first()
+                                    }
+                                },
+                                label = { Text("👤 Amigo", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = selectedScope == PlanScope.GROUP_ONLY,
+                                onClick = {
+                                    selectedScope = PlanScope.GROUP_ONLY
+                                    if (selectedGroup == null && groupsList.isNotEmpty()) {
+                                        selectedGroup = groupsList.first()
+                                    }
+                                },
+                                label = { Text("👥 Grupo", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        // Friend Picker Dropdown
+                        if (selectedScope == PlanScope.FRIEND_ONLY) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (friendsList.isEmpty()) {
+                                Text(
+                                    "No tienes amigos agregados aún. Agrega amigos desde el Hub.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFC62828)
+                                )
+                            } else {
+                                OutlinedCard(
+                                    onClick = { friendDropdownExpanded = true },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Amigo: ${selectedFriend?.name ?: "Seleccionar amigo"}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = friendDropdownExpanded,
+                                    onDismissRequest = { friendDropdownExpanded = false }
+                                ) {
+                                    friendsList.forEach { f ->
+                                        DropdownMenuItem(
+                                            text = { Text("${f.avatarEmoji} ${f.name} (${f.friendCode})") },
+                                            onClick = {
+                                                selectedFriend = f
+                                                friendDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Group Picker Dropdown
+                        if (selectedScope == PlanScope.GROUP_ONLY) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (groupsList.isEmpty()) {
+                                Text(
+                                    "No perteneces a ningún grupo aún. Crea un grupo desde el Hub.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFC62828)
+                                )
+                            } else {
+                                OutlinedCard(
+                                    onClick = { groupDropdownExpanded = true },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Grupo: ${selectedGroup?.name ?: "Seleccionar grupo"}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = groupDropdownExpanded,
+                                    onDismissRequest = { groupDropdownExpanded = false }
+                                ) {
+                                    groupsList.forEach { g ->
+                                        DropdownMenuItem(
+                                            text = { Text("${g.iconEmoji} ${g.name} (${g.groupCode})") },
+                                            onClick = {
+                                                selectedGroup = g
+                                                groupDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Title Input
                     OutlinedTextField(
                         value = title,
@@ -202,7 +369,7 @@ fun CreatePlanModal(
                             if (titleError != null) titleError = null
                         },
                         label = { Text("Título del Plan *") },
-                        placeholder = { Text("Ej: Cena Romántica en Terraza") },
+                        placeholder = { Text("Ej: Tarde de Juegos y Pizza") },
                         isError = titleError != null,
                         supportingText = titleError?.let { { Text(it, color = Color(0xFFFF1744)) } },
                         singleLine = true,
@@ -230,7 +397,6 @@ fun CreatePlanModal(
                                 selected = isSelected,
                                 onClick = {
                                     selectedCategory = cat
-                                    // Auto-suggest preset based on category
                                     when (cat) {
                                         "Comida" -> selectedPresetResName = "plan_sushi"
                                         "Película" -> selectedPresetResName = "plan_cine"
@@ -294,7 +460,7 @@ fun CreatePlanModal(
                                         .width(76.dp)
                                         .clickable {
                                             selectedPresetResName = option.resName
-                                            customImageUrl = "" // clear custom URL on preset click
+                                            customImageUrl = ""
                                         }
                                 ) {
                                     Box(
@@ -362,7 +528,6 @@ fun CreatePlanModal(
                             shape = RoundedCornerShape(12.dp)
                         )
 
-                        // Live Custom Preview
                         if (customImageUrl.isNotBlank()) {
                             Row(
                                 modifier = Modifier
@@ -419,7 +584,7 @@ fun CreatePlanModal(
                             if (locationError != null) locationError = null
                         },
                         label = { Text("Ubicación / Lugar *") },
-                        placeholder = { Text("Ej: Parque México / Roma Norte") },
+                        placeholder = { Text("Ej: Casa / Parque / Cafetería") },
                         isError = locationError != null,
                         supportingText = locationError?.let { { Text(it, color = Color(0xFFFF1744)) } },
                         singleLine = true,
@@ -483,7 +648,7 @@ fun CreatePlanModal(
                             OutlinedTextField(
                                 value = tagInput,
                                 onValueChange = { tagInput = it },
-                                placeholder = { Text("Añadir tag (ej: Aire Libre)") },
+                                placeholder = { Text("Añadir tag (ej: Amigos)") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp)
@@ -544,7 +709,7 @@ fun CreatePlanModal(
                 ) {
                     Icon(Icons.Default.Save, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Guardar Plan con Imagen", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Guardar Plan", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
             }
         }

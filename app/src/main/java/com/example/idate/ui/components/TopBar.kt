@@ -25,16 +25,19 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.idate.R
-import com.example.idate.data.remote.model.LiveRoom
+import com.example.idate.model.ActivePlanningContext
 
 @Composable
 fun TopBar(
     savedPlansCount: Int,
-    liveRoom: LiveRoom?,
+    friendsCount: Int,
+    groupsCount: Int,
+    activeContext: ActivePlanningContext,
     onOpenSavedPlans: () -> Unit,
-    onOpenLiveRoom: () -> Unit,
+    onOpenFriendsHub: () -> Unit,
     onOpenCreatePlan: () -> Unit,
-    onOpenPlanManager: () -> Unit
+    onOpenPlanManager: () -> Unit,
+    onResetActiveContext: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -49,43 +52,48 @@ fun TopBar(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            // 1. LEFT: Sala en Vivo / Radar Button (Always visible)
+            // 1. LEFT: Friends and Groups Hub Button
             Box(
                 modifier = Modifier.align(Alignment.CenterStart)
             ) {
                 IconButton(
-                    onClick = onOpenLiveRoom,
+                    onClick = onOpenFriendsHub,
                     modifier = Modifier
                         .size(42.dp)
                         .clip(CircleShape)
-                        .background(if (liveRoom != null) Color(0xFFE8F5E9) else Color(0xFFE0F2F1))
+                        .background(
+                            if (activeContext.type != ActivePlanningContext.ContextType.GLOBAL)
+                                Color(0xFFE8F5E9)
+                            else
+                                Color(0xFFF1F8E9)
+                        )
                         .border(
                             1.5.dp,
-                            if (liveRoom != null) Color(0xFF00E676) else Color(0xFF00897B).copy(alpha = 0.5f),
+                            if (activeContext.type != ActivePlanningContext.ContextType.GLOBAL)
+                                Color(0xFF2E7D32)
+                            else
+                                Color(0xFF81C784).copy(alpha = 0.6f),
                             CircleShape
                         )
                         .semantics {
-                            contentDescription = if (liveRoom != null)
-                                "Sala en vivo activa: código ${liveRoom.roomCode}. Toca para abrir detalles."
-                            else
-                                "Abrir Sala en Vivo y conectar dos dispositivos."
+                            contentDescription = "Abrir Hub de Amigos y Grupos"
                         }
                 ) {
                     Icon(
-                        imageVector = Icons.Default.WifiTethering,
-                        contentDescription = "Sala en Vivo",
-                        tint = if (liveRoom != null) Color(0xFF00C853) else Color(0xFF00897B),
+                        imageVector = Icons.Default.Groups,
+                        contentDescription = "Amigos y Grupos",
+                        tint = Color(0xFF2E7D32),
                         modifier = Modifier.size(22.dp)
                     )
                 }
 
-                // Live Active Badge Indicator
-                if (liveRoom != null) {
+                // Badge Indicator if user has friends or active context
+                if (friendsCount > 0 || groupsCount > 0) {
                     Box(
                         modifier = Modifier
-                            .size(10.dp)
+                            .size(11.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF00E676))
+                            .background(Color(0xFF00C853))
                             .border(1.5.dp, Color.White, CircleShape)
                             .align(Alignment.TopEnd)
                     )
@@ -96,7 +104,7 @@ fun TopBar(
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .clickable { onOpenLiveRoom() }
+                    .clickable { onOpenFriendsHub() }
                     .padding(horizontal = 8.dp, vertical = 2.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -131,7 +139,6 @@ fun TopBar(
                     )
                 }
 
-                // Cascading Vertical Dropdown Menu
                 DropdownMenu(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
@@ -141,6 +148,70 @@ fun TopBar(
                     shadowElevation = 12.dp,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEEEEEE))
                 ) {
+                    // Item 0: Amigos y Grupos
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFE8F5E9)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.People,
+                                        contentDescription = null,
+                                        tint = Color(0xFF2E7D32),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f, fill = false)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "Amigos y Grupos",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = Color.Black
+                                        )
+                                        if (friendsCount > 0) {
+                                            Surface(
+                                                color = Color(0xFF2E7D32),
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Text(
+                                                    text = "$friendsCount",
+                                                    color = Color.White,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = "Conexiones y planes compartidos",
+                                        fontSize = 11.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenFriendsHub()
+                        }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), color = Color(0xFFF0F0F0))
+
                     // Item 1: Mis Planes Guardados
                     DropdownMenuItem(
                         text = {
@@ -296,44 +367,41 @@ fun TopBar(
             }
         }
 
-        // Live Room Banner when connected
-        AnimatedVisibility(visible = liveRoom != null) {
-            liveRoom?.let { room ->
-                Surface(
-                    color = Color(0xFFE8F5E9),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenLiveRoom() }
-                        .padding(horizontal = 16.dp, vertical = 2.dp),
-                    shape = RoundedCornerShape(8.dp)
+        // Active Targeted Planning Banner (When swiping specifically for a Friend or Group)
+        AnimatedVisibility(visible = activeContext.type != ActivePlanningContext.ContextType.GLOBAL) {
+            Surface(
+                color = if (activeContext.type == ActivePlanningContext.ContextType.GROUP) Color(0xFFEDE7F6) else Color(0xFFE8F5E9),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF00C853))
-                            )
-                            Text(
-                                text = "Sala: ${room.roomCode} • ${room.partnerName ?: "Esperando pareja..."}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1B5E20)
-                            )
-                        }
+                        Text(activeContext.emoji, fontSize = 14.sp)
                         Text(
-                            text = "${room.matchedPlanIds.size} matches",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF2E7D32)
+                            text = activeContext.displayName,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (activeContext.type == ActivePlanningContext.ContextType.GROUP) Color(0xFF4A148C) else Color(0xFF1B5E20)
+                        )
+                    }
+                    IconButton(
+                        onClick = onResetActiveContext,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Volver a planes globales",
+                            tint = Color.DarkGray,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }

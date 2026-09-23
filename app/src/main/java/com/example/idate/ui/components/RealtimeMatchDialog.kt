@@ -2,12 +2,14 @@ package com.example.idate.ui.components
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,7 +20,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -34,18 +35,22 @@ import com.example.idate.model.Plan
 fun RealtimeMatchDialog(
     plan: Plan,
     partnerName: String,
+    groupName: String? = null,
+    likedUserNames: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onViewDetails: (Plan) -> Unit
 ) {
+    val isGroupMatch = !groupName.isNullOrBlank() || likedUserNames.size >= 2
+
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val scale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = 1.15f,
+        targetValue = 1.12f,
         animationSpec = infiniteRepeatable(
             animation = tween(800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "heartScale"
+        label = "matchScale"
     )
 
     Dialog(onDismissRequest = onDismiss) {
@@ -54,9 +59,13 @@ fun RealtimeMatchDialog(
             colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(8.dp)
                 .semantics {
-                    contentDescription = "¡Coincidencia en tiempo real con $partnerName para el plan ${plan.title}!"
+                    contentDescription = if (isGroupMatch) {
+                        "¡Match de Grupo en $groupName para el plan ${plan.title}!"
+                    } else {
+                        "¡Coincidencia en tiempo real con $partnerName para el plan ${plan.title}!"
+                    }
                 },
             elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
         ) {
@@ -66,53 +75,97 @@ fun RealtimeMatchDialog(
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Heart Pulsing Badge
+                // Pulsing Icon Badge
                 Box(
                     modifier = Modifier
                         .scale(scale)
                         .size(76.dp)
                         .clip(CircleShape)
                         .background(
-                            Brush.linearGradient(
-                                listOf(Color(0xFFFF1744), Color(0xFFE91E63), Color(0xFFFF4081))
-                            )
+                            if (isGroupMatch) {
+                                Brush.linearGradient(
+                                    listOf(Color(0xFF6200EE), Color(0xFF7C4DFF), Color(0xFFB388FF))
+                                )
+                            } else {
+                                Brush.linearGradient(
+                                    listOf(Color(0xFFFF1744), Color(0xFFE91E63), Color(0xFFFF4081))
+                                )
+                            }
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Favorite,
-                        contentDescription = "Corazón de Match",
+                        imageVector = if (isGroupMatch) Icons.Default.Groups else Icons.Default.Favorite,
+                        contentDescription = "Icono Match",
                         tint = Color.White,
-                        modifier = Modifier.size(42.dp)
+                        modifier = Modifier.size(40.dp)
                     )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "¡IT'S A MATCH EN VIVO!",
+                    text = if (isGroupMatch) "¡MATCH DE GRUPO! 🎉" else "¡IT'S A MATCH! ❤️",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Black,
-                    letterSpacing = 1.5.sp,
-                    color = Color(0xFFE91E63)
+                    letterSpacing = 1.2.sp,
+                    color = if (isGroupMatch) Color(0xFF6200EE) else Color(0xFFE91E63)
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                Text(
-                    text = "¡A ti y a $partnerName les encantó la misma idea de cita al mismo tiempo!",
-                    fontSize = 14.sp,
-                    color = Color.DarkGray,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 20.sp
-                )
+                if (isGroupMatch) {
+                    val namesText = if (likedUserNames.isNotEmpty()) {
+                        likedUserNames.joinToString(", ")
+                    } else {
+                        "2 o más personas"
+                    }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "¡A $namesText les gustó este plan!",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            textAlign = TextAlign.Center
+                        )
+
+                        if (!groupName.isNullOrBlank()) {
+                            Surface(
+                                color = Color(0xFFEDE7F6),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "Grupo: $groupName",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF4A148C),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "¡A ti y a $partnerName les encantó la misma idea de cita al mismo tiempo!",
+                        fontSize = 14.sp,
+                        color = Color.DarkGray,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Plan preview
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF0F5)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isGroupMatch) Color(0xFFF3E5F5) else Color(0xFFFFF0F5)
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -134,7 +187,7 @@ fun RealtimeMatchDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = plan.category.uppercase(),
-                                color = Color(0xFFE91E63),
+                                color = if (isGroupMatch) Color(0xFF6200EE) else Color(0xFFE91E63),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp
@@ -155,7 +208,7 @@ fun RealtimeMatchDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(22.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Button(
                     onClick = {
@@ -166,9 +219,11 @@ fun RealtimeMatchDialog(
                         .fillMaxWidth()
                         .height(50.dp),
                     shape = RoundedCornerShape(25.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63))
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isGroupMatch) Color(0xFF6200EE) else Color(0xFFE91E63)
+                    )
                 ) {
-                    Text("Ver Detalles y Agendar Cita", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Ver Detalles del Plan", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -177,7 +232,7 @@ fun RealtimeMatchDialog(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Seguir Deslizando Juntos", color = Color.Gray, fontWeight = FontWeight.SemiBold)
+                    Text("Seguir Deslizando", color = Color.Gray, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
