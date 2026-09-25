@@ -140,6 +140,19 @@ fun DeckStack(
     onResetDeck: () -> Unit,
     onCreateNewPlan: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Precargar las siguientes 3 tarjetas en memoria para garantizar nitidez y 0ms de retardo
+    androidx.compose.runtime.LaunchedEffect(currentIndex, plans) {
+        val end = (currentIndex + 3).coerceAtMost(plans.size)
+        for (i in currentIndex until end) {
+            val p = plans.getOrNull(i)
+            if (p != null && p.imageUrl.isNotBlank()) {
+                PlanImageCache.preloadImage(context, p.imageUrl)
+            }
+        }
+    }
+
     if (currentIndex < plans.size) {
         val nextPlan = plans.getOrNull(currentIndex + 1)
         val currentPlan = plans[currentIndex]

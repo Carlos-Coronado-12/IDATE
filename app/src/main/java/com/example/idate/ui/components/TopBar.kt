@@ -36,8 +36,8 @@ fun TopBar(
     onOpenSavedPlans: () -> Unit,
     onOpenFriendsHub: () -> Unit,
     onOpenCreatePlan: () -> Unit,
-    onOpenPlanManager: () -> Unit,
-    onResetActiveContext: () -> Unit
+    onResetActiveContext: () -> Unit,
+    onReturnToMainMenu: (() -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -52,51 +52,68 @@ fun TopBar(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            // 1. LEFT: Friends and Groups Hub Button
-            Box(
-                modifier = Modifier.align(Alignment.CenterStart)
+            // 1. LEFT: Return to Main Menu or Friends and Groups Hub Button
+            Row(
+                modifier = Modifier.align(Alignment.CenterStart),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onOpenFriendsHub,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (activeContext.type != ActivePlanningContext.ContextType.GLOBAL)
-                                Color(0xFFE8F5E9)
-                            else
-                                Color(0xFFF1F8E9)
+                if (onReturnToMainMenu != null) {
+                    IconButton(
+                        onClick = onReturnToMainMenu,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFF1F3F9))
+                            .border(1.5.dp, Color(0xFFE2E8F0), CircleShape)
+                            .semantics {
+                                contentDescription = "Regresar al Menú Principal"
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Menú Principal",
+                            tint = Color(0xFF1E293B),
+                            modifier = Modifier.size(22.dp)
                         )
-                        .border(
-                            1.5.dp,
-                            if (activeContext.type != ActivePlanningContext.ContextType.GLOBAL)
-                                Color(0xFF2E7D32)
-                            else
-                                Color(0xFF81C784).copy(alpha = 0.6f),
-                            CircleShape
-                        )
-                        .semantics {
-                            contentDescription = "Abrir Hub de Amigos y Grupos"
-                        }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Groups,
-                        contentDescription = "Amigos y Grupos",
-                        tint = Color(0xFF2E7D32),
-                        modifier = Modifier.size(22.dp)
-                    )
+                    }
                 }
 
-                // Badge Indicator if user has friends or active context
-                if (friendsCount > 0 || groupsCount > 0) {
-                    Box(
+                Box {
+                    IconButton(
+                        onClick = onOpenFriendsHub,
                         modifier = Modifier
-                            .size(11.dp)
+                            .size(42.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF00C853))
-                            .border(1.5.dp, Color.White, CircleShape)
-                            .align(Alignment.TopEnd)
-                    )
+                            .background(Color(0xFFE8F5E9))
+                            .border(
+                                1.5.dp,
+                                Color(0xFF2E7D32),
+                                CircleShape
+                            )
+                            .semantics {
+                                contentDescription = "Abrir Hub de Amigos y Grupos"
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Groups,
+                            contentDescription = "Amigos y Grupos",
+                            tint = Color(0xFF2E7D32),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    // Badge Indicator if user has friends or active context
+                    if (friendsCount > 0 || groupsCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .size(11.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF00C853))
+                                .border(1.5.dp, Color.White, CircleShape)
+                                .align(Alignment.TopEnd)
+                        )
+                    }
                 }
             }
 
@@ -148,6 +165,52 @@ fun TopBar(
                     shadowElevation = 12.dp,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEEEEEE))
                 ) {
+                    if (onReturnToMainMenu != null) {
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFEDE7F6)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Home,
+                                            contentDescription = null,
+                                            tint = Color(0xFF673AB7),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                                        Text(
+                                            text = "Menú Principal",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = Color.Black
+                                        )
+                                        Text(
+                                            text = "Amigos, Grupos y Barajas",
+                                            fontSize = 11.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onReturnToMainMenu()
+                            }
+                        )
+
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), color = Color(0xFFF0F0F0))
+                    }
+
                     // Item 0: Amigos y Grupos
                     DropdownMenuItem(
                         text = {
@@ -276,52 +339,7 @@ fun TopBar(
 
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), color = Color(0xFFF0F0F0))
 
-                    // Item 2: Lápiz (Gestionar Planes)
-                    DropdownMenuItem(
-                        text = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFFE1F5FE)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = null,
-                                        tint = Color(0xFF0288D1),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Column {
-                                    Text(
-                                        text = "Gestionar Planes",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = Color.Black
-                                    )
-                                    Text(
-                                        text = "Ver catálogo y opciones",
-                                        fontSize = 11.sp,
-                                        color = Color.Gray
-                                    )
-                                }
-                            }
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onOpenPlanManager()
-                        }
-                    )
-
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), color = Color(0xFFF0F0F0))
-
-                    // Item 3: Signo '+' (Crear Nuevo Plan)
+                    // Item 2: Signo '+' (Crear Nuevo Plan)
                     DropdownMenuItem(
                         text = {
                             Row(
@@ -367,10 +385,21 @@ fun TopBar(
             }
         }
 
-        // Active Targeted Planning Banner (When swiping specifically for a Friend or Group)
-        AnimatedVisibility(visible = activeContext.type != ActivePlanningContext.ContextType.GLOBAL) {
+        // Active Targeted Planning Banner (Showing active Deck, Friend, or Group)
+        AnimatedVisibility(visible = true) {
+            val bannerBg = when (activeContext.type) {
+                ActivePlanningContext.ContextType.GROUP -> Color(0xFFEDE7F6)
+                ActivePlanningContext.ContextType.DECK -> Color(0xFFFFF0F5)
+                else -> Color(0xFFE8F5E9)
+            }
+            val textColor = when (activeContext.type) {
+                ActivePlanningContext.ContextType.GROUP -> Color(0xFF4A148C)
+                ActivePlanningContext.ContextType.DECK -> Color(0xFFC2185B)
+                else -> Color(0xFF1B5E20)
+            }
+
             Surface(
-                color = if (activeContext.type == ActivePlanningContext.ContextType.GROUP) Color(0xFFEDE7F6) else Color(0xFFE8F5E9),
+                color = bannerBg,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 2.dp),
@@ -390,7 +419,7 @@ fun TopBar(
                             text = activeContext.displayName,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (activeContext.type == ActivePlanningContext.ContextType.GROUP) Color(0xFF4A148C) else Color(0xFF1B5E20)
+                            color = textColor
                         )
                     }
                     IconButton(
@@ -399,7 +428,7 @@ fun TopBar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Volver a planes globales",
+                            contentDescription = "Cambiar contexto",
                             tint = Color.DarkGray,
                             modifier = Modifier.size(16.dp)
                         )

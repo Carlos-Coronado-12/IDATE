@@ -21,3 +21,8 @@ app/google-services.json
 app/build/
 *.apk
 *.aab
+
+# Local media assets
+IMAGENES APP/
+*.png
+*.jpg

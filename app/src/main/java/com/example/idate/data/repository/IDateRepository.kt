@@ -26,6 +26,7 @@ class IDateRepository(context: Context) {
     private val planDao = database.planDao()
     private val likedPlanDao = database.likedPlanDao()
     private val friendDao = database.friendDao()
+    private val dateDeckDao = database.dateDeckDao()
 
     private val realtimeDb: FirebaseDatabase by lazy {
         try {
@@ -38,7 +39,17 @@ class IDateRepository(context: Context) {
     }
 
     suspend fun initializeDefaultDataIfNeeded() {
-        // Keeps user database prepared
+        try {
+            // Delete legacy starter deck if it exists
+            dateDeckDao.deleteDeckById("starter_deck_main")
+
+            if (planDao.getAllPlansList().isEmpty()) {
+                val entities = SamplePlans.defaultPlans.map { it.toEntity() }
+                planDao.insertPlans(entities)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("IDATE_REPO", "Error inicializando datos por defecto: ${e.message}")
+        }
     }
 
     suspend fun getOrCreateUserProfile(): UserProfile {
@@ -158,6 +169,14 @@ class IDateRepository(context: Context) {
         friendDao.deleteFriend(friendId)
     }
 
+    suspend fun incrementFriendMatches(friendId: String) {
+        friendDao.incrementFriendMatches(friendId)
+    }
+
+    suspend fun incrementGroupMatches(groupId: String) {
+        friendDao.incrementGroupMatches(groupId)
+    }
+
     // Groups Management
     fun getAllGroups(): Flow<List<FriendGroup>> {
         return friendDao.getAllGroups().map { list ->
@@ -220,129 +239,143 @@ class IDateRepository(context: Context) {
         friendDao.deleteGroup(groupId)
     }
 
-    // Plans Sincronization with Target Support
-    fun startRealtimePlansSync(scope: CoroutineScope) {
-        try {
-            realtimeDb.getReference("plans").addValueEventListener(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            if (!snapshot.exists()) return@launch
+    suspend fun resetAllUserMatches(myUserId: String, friendIds: List<String>, groupCodes: List<String>) {
+        friendDao.resetAllFriendMatches()
+        friendDao.resetAllGroupMatches()
+        friendDao.clearAllTargetLikes()
+        FriendsRemoteManager.resetAllCloudMatches(myUserId, friendIds, groupCodes)
+    }
 
-                            val remoteEntities = mutableListOf<PlanEntity>()
-                            for (child in snapshot.children) {
-                                val id = child.child("id").getValue(Long::class.java)?.toInt()
-                                    ?: child.key?.toIntOrNull() ?: continue
-                                val title = child.child("title").getValue(String::class.java) ?: continue
-                                val category = child.child("category").getValue(String::class.java) ?: "Planes"
-                                val detail = child.child("detail").getValue(String::class.java) ?: ""
-                                val description = child.child("description").getValue(String::class.java) ?: ""
-                                val location = child.child("location").getValue(String::class.java) ?: ""
-                                val duration = child.child("duration").getValue(String::class.java) ?: ""
-                                val budget = child.child("budget").getValue(String::class.java) ?: ""
-                                val imageUrl = child.child("imageUrl").getValue(String::class.java) ?: ""
-                                val imageResName = child.child("imageResName").getValue(String::class.java) ?: "plan_legos"
-                                val emoji = child.child("emoji").getValue(String::class.java) ?: getEmojiForCategory(category)
-                                val targetFriendId = child.child("targetFriendId").getValue(String::class.java)
-                                val targetGroupId = child.child("targetGroupId").getValue(String::class.java)
-                                val targetFriendName = child.child("targetFriendName").getValue(String::class.java)
-                                val targetGroupName = child.child("targetGroupName").getValue(String::class.java)
-                                val scopeStr = child.child("scope").getValue(String::class.java) ?: "GLOBAL"
-
-                                val tagsList = mutableListOf<String>()
-                                child.child("tags").children.forEach { tagSnap ->
-                                    tagSnap.getValue(String::class.java)?.let { tagsList.add(it) }
-                                }
-
-                                remoteEntities.add(
-                                    PlanEntity(
-                                        id = id,
-                                        category = category,
-                                        title = title,
-                                        detail = if (detail.isNotBlank()) detail else "$location / $budget",
-                                        imageResName = imageResName,
-                                        imageUrl = imageUrl,
-                                        iconName = getIconNameForCategory(category),
-                                        iconEmoji = emoji,
-                                        description = description,
-                                        location = location,
-                                        duration = duration,
-                                        budget = budget,
-                                        tags = tagsList,
-                                        isCustom = true,
-                                        targetFriendId = targetFriendId,
-                                        targetGroupId = targetGroupId,
-                                        targetFriendName = targetFriendName,
-                                        targetGroupName = targetGroupName,
-                                        scope = scopeStr
-                                    )
-                                )
-                            }
-
-                            if (remoteEntities.isNotEmpty()) {
-                                planDao.insertPlans(remoteEntities)
-
-                                val remoteIds = remoteEntities.map { it.id }.toSet()
-                                val localPlans = planDao.getAllPlansList()
-                                for (local in localPlans) {
-                                    if (local.isCustom && !remoteIds.contains(local.id)) {
-                                        planDao.deletePlanById(local.id)
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.e("IDATE_SYNC", "Error sincronización: ${e.message}")
-                        }
-                    }
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    android.util.Log.e("IDATE_SYNC", "Error listener plans: ${error.message}")
-                }
-            })
-        } catch (e: Exception) {
-            android.util.Log.e("IDATE_SYNC", "Error iniciando sync: ${e.message}")
+    // ==========================================
+    // Date Decks Management
+    // ==========================================
+    fun getAllDecks(): Flow<List<DateDeck>> {
+        return dateDeckDao.getAllDecks().map { entities ->
+            entities.map {
+                DateDeck(
+                    id = it.id,
+                    name = it.name,
+                    description = it.description,
+                    iconEmoji = it.iconEmoji,
+                    colorHex = it.colorHex,
+                    planIds = it.planIds,
+                    createdBy = it.createdBy,
+                    isImported = it.isImported,
+                    targetGroupId = it.targetGroupId,
+                    targetFriendId = it.targetFriendId,
+                    createdAt = it.createdAt
+                )
+            }
         }
+    }
+
+    suspend fun createOrUpdateDeck(deck: DateDeck) {
+        dateDeckDao.insertDeck(
+            DateDeckEntity(
+                id = deck.id,
+                name = deck.name,
+                description = deck.description,
+                iconEmoji = deck.iconEmoji,
+                colorHex = deck.colorHex,
+                planIds = deck.planIds,
+                createdBy = deck.createdBy,
+                isImported = deck.isImported,
+                targetGroupId = deck.targetGroupId,
+                targetFriendId = deck.targetFriendId,
+                createdAt = deck.createdAt
+            )
+        )
+        // Sync to cloud if needed
+        try {
+            val deckMap = mapOf(
+                "id" to deck.id,
+                "name" to deck.name,
+                "description" to deck.description,
+                "iconEmoji" to deck.iconEmoji,
+                "colorHex" to deck.colorHex,
+                "planIds" to deck.planIds,
+                "createdBy" to deck.createdBy,
+                "createdAt" to deck.createdAt
+            )
+            realtimeDb.getReference("decks").child(deck.id).setValue(deckMap)
+        } catch (_: Exception) {}
+    }
+
+    suspend fun deleteDeck(deckId: String) {
+        dateDeckDao.deleteDeckById(deckId)
+        try {
+            realtimeDb.getReference("decks").child(deckId).removeValue()
+        } catch (_: Exception) {}
+    }
+
+    suspend fun removeDefaultDecks() {
+        dateDeckDao.deleteDeckById("deck_romantic")
+        dateDeckDao.deleteDeckById("deck_adventures")
+        dateDeckDao.deleteDeckById("deck_casual")
+        dateDeckDao.deleteDeckById("deck_chill_food")
+        dateDeckDao.deleteDeckById("deck_tasty_food")
+        try {
+            realtimeDb.getReference("decks").child("deck_romantic").removeValue()
+            realtimeDb.getReference("decks").child("deck_adventures").removeValue()
+            realtimeDb.getReference("decks").child("deck_casual").removeValue()
+        } catch (_: Exception) {}
+    }
+
+    // Guardar únicamente planes (usado para barajas grupales sin contaminar inventario de barajas)
+    suspend fun savePlansOnly(plans: List<Plan>) {
+        try {
+            if (plans.isNotEmpty()) {
+                val entities = plans.map { it.toEntity() }
+                planDao.insertPlans(entities)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("IDATE_REPO", "Error guardando planes: ${e.message}")
+        }
+    }
+
+    // Importar una Baraja recibida de un amigo junto con todos sus planes
+    suspend fun importDeckWithPlans(deck: DateDeck, plans: List<Plan>) {
+        try {
+            if (plans.isNotEmpty()) {
+                val entities = plans.map { it.toEntity() }
+                planDao.insertPlans(entities)
+            }
+            createOrUpdateDeck(deck.copy(isImported = true))
+        } catch (e: Exception) {
+            android.util.Log.e("IDATE_REPO", "Error importando baraja con planes: ${e.message}")
+        }
+    }
+
+    suspend fun getPlansForIds(planIds: List<Int>): List<Plan> {
+        val all = planDao.getAllPlansList().associateBy { it.id }
+        return planIds.mapNotNull { all[it]?.toDomain() }
     }
 
     suspend fun deleteAllPlans() {
         planDao.deleteAllPlans()
         likedPlanDao.clearAllLikedPlans()
-        try {
-            realtimeDb.getReference("plans").removeValue()
-        } catch (_: Exception) {}
     }
 
     suspend fun deletePlan(planId: Int) {
         planDao.deletePlanById(planId)
         likedPlanDao.deleteLikedPlanByPlanId(planId)
-        try {
-            realtimeDb.getReference("plans").child(planId.toString()).removeValue()
-        } catch (_: Exception) {}
     }
 
     suspend fun restoreDefaultPlans() {
         val entities = SamplePlans.defaultPlans.map { it.toEntity() }
         planDao.insertPlans(entities)
-        entities.forEach { entity ->
-            val planMap = mapOf(
-                "id" to entity.id,
-                "title" to entity.title,
-                "category" to entity.category,
-                "detail" to entity.detail,
-                "description" to entity.description,
-                "location" to entity.location,
-                "duration" to entity.duration,
-                "budget" to entity.budget,
-                "tags" to entity.tags,
-                "imageUrl" to entity.imageUrl,
-                "imageResName" to entity.imageResName,
-                "emoji" to entity.iconEmoji,
-                "scope" to "GLOBAL",
-                "createdAt" to entity.createdAt
-            )
-            realtimeDb.getReference("plans").child(entity.id.toString()).setValue(planMap)
-        }
+        val starterDeck = DateDeckEntity(
+            id = "starter_deck_main",
+            name = "Mis Citas Favoritas",
+            description = "Baraja inicial con los mejores planes de citas recomendados.",
+            iconEmoji = "🎴",
+            colorHex = 0xFF2E7D32,
+            planIds = (1..12).toList(),
+            createdBy = "IDATE",
+            isImported = false,
+            createdAt = System.currentTimeMillis()
+        )
+        dateDeckDao.insertDeck(starterDeck)
     }
 
     fun getAllPlans(): Flow<List<Plan>> {
@@ -390,12 +423,18 @@ class IDateRepository(context: Context) {
         targetGroupId: String? = null,
         targetFriendName: String? = null,
         targetGroupName: String? = null,
-        scope: PlanScope = PlanScope.GLOBAL
+        scope: PlanScope = PlanScope.GLOBAL,
+        peopleCount: String = "2 personas",
+        showBudget: Boolean = true,
+        showDuration: Boolean = true,
+        showLocation: Boolean = true,
+        showPeopleCount: Boolean = true,
+        existingPlanId: Int? = null
     ): Long {
-        val generatedId = ((System.currentTimeMillis() % 1_000_000_000L).toInt()) + kotlin.random.Random.nextInt(100, 999)
+        val finalId = existingPlanId ?: (((System.currentTimeMillis() % 1_000_000_000L).toInt()) + kotlin.random.Random.nextInt(100, 999))
 
         val entity = PlanEntity(
-            id = generatedId,
+            id = finalId,
             title = title,
             category = category,
             detail = "$location / $budget",
@@ -403,6 +442,11 @@ class IDateRepository(context: Context) {
             location = location,
             duration = duration,
             budget = budget,
+            peopleCount = peopleCount,
+            showBudget = showBudget,
+            showDuration = showDuration,
+            showLocation = showLocation,
+            showPeopleCount = showPeopleCount,
             tags = tags,
             imageUrl = imageUrl,
             imageResName = imageResName,
@@ -419,7 +463,7 @@ class IDateRepository(context: Context) {
 
         try {
             val planMap = mutableMapOf<String, Any>(
-                "id" to generatedId,
+                "id" to finalId,
                 "title" to title,
                 "category" to category,
                 "detail" to "$location / $budget",
@@ -427,6 +471,11 @@ class IDateRepository(context: Context) {
                 "location" to location,
                 "duration" to duration,
                 "budget" to budget,
+                "peopleCount" to peopleCount,
+                "showBudget" to showBudget,
+                "showDuration" to showDuration,
+                "showLocation" to showLocation,
+                "showPeopleCount" to showPeopleCount,
                 "tags" to tags,
                 "imageUrl" to imageUrl,
                 "imageResName" to imageResName,
@@ -439,12 +488,12 @@ class IDateRepository(context: Context) {
             targetFriendName?.let { planMap["targetFriendName"] = it }
             targetGroupName?.let { planMap["targetGroupName"] = it }
 
-            realtimeDb.getReference("plans").child(generatedId.toString()).setValue(planMap)
+            realtimeDb.getReference("plans").child(finalId.toString()).setValue(planMap)
         } catch (e: Exception) {
             android.util.Log.e("IDATE_FIREBASE", "Excepción al sincronizar plan: ${e.message}")
         }
 
-        return generatedId.toLong()
+        return finalId.toLong()
     }
 
     private fun getEmojiForCategory(category: String): String {
@@ -487,6 +536,11 @@ class IDateRepository(context: Context) {
             location = this.location,
             duration = this.duration,
             budget = this.budget,
+            peopleCount = this.peopleCount,
+            showBudget = this.showBudget,
+            showDuration = this.showDuration,
+            showLocation = this.showLocation,
+            showPeopleCount = this.showPeopleCount,
             tags = this.tags,
             isCustom = false,
             targetFriendId = this.targetFriendId,
@@ -517,6 +571,11 @@ class IDateRepository(context: Context) {
             location = this.location,
             duration = this.duration,
             budget = this.budget,
+            peopleCount = this.peopleCount,
+            showBudget = this.showBudget,
+            showDuration = this.showDuration,
+            showLocation = this.showLocation,
+            showPeopleCount = this.showPeopleCount,
             tags = this.tags,
             categoryColor = Color.Red,
             targetFriendId = this.targetFriendId,

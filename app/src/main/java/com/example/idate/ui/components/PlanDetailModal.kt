@@ -2,6 +2,7 @@ package com.example.idate.ui.components
 
 import android.content.Intent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -30,7 +31,8 @@ fun PlanDetailModal(
     plan: Plan,
     onDismiss: () -> Unit,
     onSaveToggle: (Plan) -> Unit,
-    isSaved: Boolean
+    isSaved: Boolean,
+    onEditPlan: (Plan) -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -53,8 +55,8 @@ fun PlanDetailModal(
                     .fillMaxWidth()
                     .height(240.dp)
             ) {
-                AsyncImage(
-                    model = if (plan.imageUrl.isNotBlank()) plan.imageUrl else if (plan.imageResId != 0) plan.imageResId else R.drawable.plan_legos,
+                PlanImage(
+                    plan = plan,
                     contentDescription = plan.title,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
@@ -86,12 +88,36 @@ fun PlanDetailModal(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IconButton(
                             onClick = {
+                                onDismiss()
+                                onEditPlan(plan)
+                            },
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Editar Plan",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val shareText = buildString {
+                                    appendLine("¡Oye! Encontré este plan genial en IDATE:\n")
+                                    appendLine("${plan.iconEmoji} *${plan.title}*")
+                                    if (plan.showPeopleCount && plan.peopleCount.isNotBlank()) appendLine("👥 ${plan.peopleCount}")
+                                    if (plan.showLocation && plan.location.isNotBlank()) appendLine("📍 ${plan.location}")
+                                    if (plan.showDuration && plan.duration.isNotBlank()) appendLine("⏱️ ${plan.duration}")
+                                    if (plan.showBudget && plan.budget.isNotBlank()) appendLine("💰 ${plan.budget}")
+                                    appendLine("\n¿Te animas a ir?")
+                                }
                                 val sendIntent = Intent().apply {
                                     action = Intent.ACTION_SEND
-                                    putExtra(
-                                        Intent.EXTRA_TEXT,
-                                        "¡Oye! Encontré este plan genial en IDATE:\n\n${plan.iconEmoji} *${plan.title}*\n📍 ${plan.location}\n⏱️ ${plan.duration}\n💰 ${plan.budget}\n\n¿Te animas a ir?"
-                                    )
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
                                     type = "text/plain"
                                 }
                                 val shareIntent = Intent.createChooser(sendIntent, "Invitar a un amigo/pareja")
@@ -180,29 +206,45 @@ fun PlanDetailModal(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Info Cards Row
+                // Info Cards Row (Dynamic based on toggles)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    DetailCard(
-                        icon = Icons.Default.LocationOn,
-                        title = "Ubicación",
-                        subtitle = plan.location,
-                        modifier = Modifier.weight(1f)
-                    )
-                    DetailCard(
-                        icon = Icons.Default.AccessTime,
-                        title = "Duración",
-                        subtitle = plan.duration,
-                        modifier = Modifier.weight(1f)
-                    )
-                    DetailCard(
-                        icon = Icons.Default.AttachMoney,
-                        title = "Presupuesto",
-                        subtitle = plan.budget,
-                        modifier = Modifier.weight(1f)
-                    )
+                    if (plan.showPeopleCount && plan.peopleCount.isNotBlank()) {
+                        DetailCard(
+                            icon = Icons.Default.Group,
+                            title = "Personas",
+                            subtitle = plan.peopleCount,
+                            modifier = Modifier.width(130.dp)
+                        )
+                    }
+                    if (plan.showLocation && plan.location.isNotBlank()) {
+                        DetailCard(
+                            icon = Icons.Default.LocationOn,
+                            title = "Ubicación",
+                            subtitle = plan.location,
+                            modifier = Modifier.width(130.dp)
+                        )
+                    }
+                    if (plan.showDuration && plan.duration.isNotBlank()) {
+                        DetailCard(
+                            icon = Icons.Default.AccessTime,
+                            title = "Duración",
+                            subtitle = plan.duration,
+                            modifier = Modifier.width(130.dp)
+                        )
+                    }
+                    if (plan.showBudget && plan.budget.isNotBlank()) {
+                        DetailCard(
+                            icon = Icons.Default.AttachMoney,
+                            title = "Presupuesto",
+                            subtitle = plan.budget,
+                            modifier = Modifier.width(130.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))

@@ -3,6 +3,7 @@ package com.example.idate.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,10 +33,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.idate.R
+import com.example.idate.data.remote.FirebaseStorageManager
 import com.example.idate.model.Friend
 import com.example.idate.model.FriendGroup
+import com.example.idate.model.Plan
 import com.example.idate.model.PlanScope
+import com.example.idate.ui.components.PlanImage
 import com.example.idate.ui.utils.ImagePickerUtils
+import kotlinx.coroutines.launch
 
 data class PresetImageOption(
     val name: String,
@@ -46,6 +51,7 @@ data class PresetImageOption(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreatePlanModal(
+    editingPlan: Plan? = null,
     friendsList: List<Friend> = emptyList(),
     groupsList: List<FriendGroup> = emptyList(),
     onDismiss: () -> Unit,
@@ -63,24 +69,57 @@ fun CreatePlanModal(
         targetGroupId: String?,
         targetFriendName: String?,
         targetGroupName: String?,
-        scope: PlanScope
+        scope: PlanScope,
+        peopleCount: String,
+        showBudget: Boolean,
+        showDuration: Boolean,
+        showLocation: Boolean,
+        showPeopleCount: Boolean,
+        existingPlanId: Int?
     ) -> Unit
 ) {
     val context = LocalContext.current
 
-    var title by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("Comida") }
-    var description by remember { mutableStateOf("") }
-    var location by remember { mutableStateOf("") }
-    var duration by remember { mutableStateOf("") }
-    var budget by remember { mutableStateOf("") }
-    var tagInput by remember { mutableStateOf("") }
-    val tags = remember { mutableStateListOf("Favorito", "Nuevo") }
+    var title by remember(editingPlan) { mutableStateOf(editingPlan?.title ?: "") }
+    var selectedCategory by remember(editingPlan) { mutableStateOf(editingPlan?.category ?: "Comida") }
+    var description by remember(editingPlan) { mutableStateOf(editingPlan?.description ?: "") }
+    
+    // Configurable Fields & Toggles
+    var showLocation by remember(editingPlan) { mutableStateOf(editingPlan?.showLocation ?: true) }
+    var location by remember(editingPlan) { mutableStateOf(editingPlan?.location ?: "") }
+
+    var showBudget by remember(editingPlan) { mutableStateOf(editingPlan?.showBudget ?: true) }
+    var budget by remember(editingPlan) { mutableStateOf(editingPlan?.budget ?: "") }
+
+    var showDuration by remember(editingPlan) { mutableStateOf(editingPlan?.showDuration ?: true) }
+    var duration by remember(editingPlan) { mutableStateOf(editingPlan?.duration ?: "") }
+
+    var showPeopleCount by remember(editingPlan) { mutableStateOf(editingPlan?.showPeopleCount ?: true) }
+    var peopleCount by remember(editingPlan) { mutableStateOf(editingPlan?.peopleCount ?: "2 personas") }
+
+    var tagInput by remember(editingPlan) { mutableStateOf("") }
+    val tags = remember(editingPlan) {
+        mutableStateListOf<String>().apply {
+            if (editingPlan != null && editingPlan.tags.isNotEmpty()) {
+                addAll(editingPlan.tags)
+            } else {
+                addAll(listOf("Favorito", "Nuevo"))
+            }
+        }
+    }
 
     // Scope selection (Global, Friend, Group)
-    var selectedScope by remember { mutableStateOf(PlanScope.GLOBAL) }
-    var selectedFriend by remember { mutableStateOf<Friend?>(null) }
-    var selectedGroup by remember { mutableStateOf<FriendGroup?>(null) }
+    var selectedScope by remember(editingPlan) { mutableStateOf(editingPlan?.scope ?: PlanScope.GLOBAL) }
+    var selectedFriend by remember(editingPlan) {
+        mutableStateOf<Friend?>(
+            editingPlan?.targetFriendId?.let { id -> friendsList.find { it.id == id } }
+        )
+    }
+    var selectedGroup by remember(editingPlan) {
+        mutableStateOf<FriendGroup?>(
+            editingPlan?.targetGroupId?.let { id -> groupsList.find { it.id == id } }
+        )
+    }
     var friendDropdownExpanded by remember { mutableStateOf(false) }
     var groupDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -102,19 +141,38 @@ fun CreatePlanModal(
         )
     }
 
-    var selectedPresetResName by remember { mutableStateOf("plan_sushi") }
-    var customImageUrl by remember { mutableStateOf("") }
-    var isFromGallery by remember { mutableStateOf(false) }
+    var selectedPresetResName by remember(editingPlan) { mutableStateOf("plan_sushi") }
+    var customImageUrl by remember(editingPlan) { mutableStateOf(editingPlan?.imageUrl ?: "") }
+    var isFromGallery by remember(editingPlan) {
+        mutableStateOf(
+            editingPlan?.imageUrl?.startsWith("file://") == true ||
+            editingPlan?.imageUrl?.startsWith("data:image") == true ||
+            editingPlan?.imageUrl?.contains("firebasestorage") == true
+        )
+    }
 
-    // Gallery Picker launcher
+    val coroutineScope = rememberCoroutineScope()
+    var isUploadingImage by remember { mutableStateOf(false) }
+
+    // Gallery Picker launcher with Firebase Cloud Storage upload
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val savedLocalPath = ImagePickerUtils.copyImageToInternalStorage(context, uri)
-            if (savedLocalPath != null) {
-                customImageUrl = "file://$savedLocalPath"
-                isFromGallery = true
+            isUploadingImage = true
+            isFromGallery = true
+            coroutineScope.launch {
+                val uploadResult = FirebaseStorageManager.uploadPlanImage(context, uri)
+                uploadResult.onSuccess { cloudUrl ->
+                    customImageUrl = cloudUrl
+                    isUploadingImage = false
+                }.onFailure {
+                    val localFallback = ImagePickerUtils.processAndSaveGalleryImage(context, uri)
+                    if (localFallback != null) {
+                        customImageUrl = localFallback
+                    }
+                    isUploadingImage = false
+                }
             }
         }
     }
@@ -125,6 +183,7 @@ fun CreatePlanModal(
     var budgetError by remember { mutableStateOf<String?>(null) }
 
     val categories = listOf("Comida", "Película", "Fiesta", "Juegos", "Aire Libre", "Música", "Arte", "Planes")
+    val peopleQuickOptions = listOf("1 persona", "2 personas", "3-5 personas", "Grupal (6+)", "Cualquiera")
 
     fun validateAndSubmit() {
         var isValid = true
@@ -136,15 +195,15 @@ fun CreatePlanModal(
             titleError = null
         }
 
-        if (location.trim().isBlank()) {
-            locationError = "La ubicación es obligatoria"
+        if (showLocation && location.trim().isBlank()) {
+            locationError = "La ubicación es requerida si el campo está activo"
             isValid = false
         } else {
             locationError = null
         }
 
-        if (budget.trim().isBlank()) {
-            budgetError = "El presupuesto es obligatorio (ej: $150 MXN o Gratis)"
+        if (showBudget && budget.trim().isBlank()) {
+            budgetError = "El presupuesto es requerido si el campo está activo"
             isValid = false
         } else {
             budgetError = null
@@ -155,9 +214,9 @@ fun CreatePlanModal(
                 title.trim(),
                 selectedCategory,
                 description.trim().ifBlank { "Plan personalizado creado por ti." },
-                location.trim(),
-                duration.trim().ifBlank { "2 horas" },
-                budget.trim(),
+                if (showLocation) location.trim() else "",
+                if (showDuration) duration.trim().ifBlank { "2 horas" } else "",
+                if (showBudget) budget.trim() else "",
                 tags.toList(),
                 customImageUrl.trim(),
                 selectedPresetResName,
@@ -165,7 +224,13 @@ fun CreatePlanModal(
                 if (selectedScope == PlanScope.GROUP_ONLY) selectedGroup?.id else null,
                 if (selectedScope == PlanScope.FRIEND_ONLY) selectedFriend?.name else null,
                 if (selectedScope == PlanScope.GROUP_ONLY) selectedGroup?.name else null,
-                selectedScope
+                selectedScope,
+                if (showPeopleCount) peopleCount.trim().ifBlank { "2 personas" } else "",
+                showBudget,
+                showDuration,
+                showLocation,
+                showPeopleCount,
+                editingPlan?.id
             )
         }
     }
@@ -176,9 +241,9 @@ fun CreatePlanModal(
             colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.94f)
-                .padding(vertical = 8.dp)
-                .semantics { contentDescription = "Modal de creación de nuevo plan personalizado" },
+                .fillMaxHeight(0.95f)
+                .padding(vertical = 6.dp)
+                .semantics { contentDescription = "Modal de formulario de plan" },
             elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
         ) {
             Column(
@@ -200,18 +265,18 @@ fun CreatePlanModal(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFE8F5E9)),
+                                .background(if (editingPlan != null) Color(0xFFE3F2FD) else Color(0xFFE8F5E9)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AddCircle,
-                                contentDescription = "Crear nuevo plan",
-                                tint = Color(0xFF2E7D32),
+                                imageVector = if (editingPlan != null) Icons.Default.Edit else Icons.Default.AddCircle,
+                                contentDescription = null,
+                                tint = if (editingPlan != null) Color(0xFF1976D2) else Color(0xFF2E7D32),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                         Text(
-                            text = "Nuevo Plan Personalizado",
+                            text = if (editingPlan != null) "Editar Plan" else "Nuevo Plan Personalizado",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Black
@@ -222,7 +287,7 @@ fun CreatePlanModal(
                         onClick = onDismiss,
                         modifier = Modifier
                             .size(36.dp)
-                            .semantics { contentDescription = "Cerrar formulario de nuevo plan" }
+                            .semantics { contentDescription = "Cerrar formulario de plan" }
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Color.Gray)
                     }
@@ -438,7 +503,7 @@ fun CreatePlanModal(
                         }
                     }
 
-                    // Image Selector Section (Gallery, Web URL, Presets)
+                    // Image Selector Section
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -486,8 +551,40 @@ fun CreatePlanModal(
                             )
                         }
 
-                        // Live Preview if Custom Image or Gallery image is selected
-                        if (customImageUrl.isNotBlank()) {
+                        // Uploading Progress Indicator
+                        if (isUploadingImage) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFE8F5E9))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = Color(0xFF2E7D32),
+                                    strokeWidth = 2.5.dp
+                                )
+                                Column {
+                                    Text(
+                                        text = "Subiendo imagen a la nube...",
+                                        color = Color(0xFF1B5E20),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Visible al instante para todos tus amigos",
+                                        color = Color(0xFF388E3C),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Live Preview
+                        if (customImageUrl.isNotBlank() && !isUploadingImage) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -498,8 +595,8 @@ fun CreatePlanModal(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                AsyncImage(
-                                    model = customImageUrl,
+                                PlanImage(
+                                    imageUrl = customImageUrl,
                                     contentDescription = "Vista previa de foto",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
@@ -645,60 +742,241 @@ fun CreatePlanModal(
                         shape = RoundedCornerShape(12.dp)
                     )
 
-                    // Location Input
-                    OutlinedTextField(
-                        value = location,
-                        onValueChange = {
-                            location = it
-                            if (locationError != null) locationError = null
-                        },
-                        label = { Text("Ubicación / Lugar *") },
-                        placeholder = { Text("Ej: Casa / Parque / Cafetería") },
-                        isError = locationError != null,
-                        supportingText = locationError?.let { { Text(it, color = Color(0xFFFF1744)) } },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFFE91E63))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                    // --- CONFIGURABLE ATTRIBUTES (Toggles for Price, Duration, Location, People) ---
+                    Text(
+                        text = "Configuración de Campos en la Tarjeta:",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1F2937)
                     )
 
-                    // Budget and Duration Row
-                    Row(
+                    // 1. UBICACIÓN (Location)
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFFF9FAFB),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
                     ) {
-                        OutlinedTextField(
-                            value = budget,
-                            onValueChange = {
-                                budget = it
-                                if (budgetError != null) budgetError = null
-                            },
-                            label = { Text("Presupuesto *") },
-                            placeholder = { Text("Ej: $200 MXN") },
-                            isError = budgetError != null,
-                            supportingText = budgetError?.let { { Text(it, color = Color(0xFFFF1744)) } },
-                            singleLine = true,
-                            leadingIcon = {
-                                Icon(Icons.Default.AttachMoney, contentDescription = null, tint = Color(0xFF4CAF50))
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFFE91E63), modifier = Modifier.size(20.dp))
+                                    Column {
+                                        Text("Campo de Ubicación", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(
+                                            text = if (showLocation) "Visible en la tarjeta" else "Oculto (apagado)",
+                                            fontSize = 11.sp,
+                                            color = if (showLocation) Color(0xFF2E7D32) else Color.Gray
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = showLocation,
+                                    onCheckedChange = { showLocation = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFE91E63))
+                                )
+                            }
 
-                        OutlinedTextField(
-                            value = duration,
-                            onValueChange = { duration = it },
-                            label = { Text("Duración") },
-                            placeholder = { Text("Ej: 2 horas") },
-                            singleLine = true,
-                            leadingIcon = {
-                                Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(0xFFFF9800))
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
+                            AnimatedVisibility(visible = showLocation) {
+                                Column(modifier = Modifier.padding(top = 8.dp)) {
+                                    OutlinedTextField(
+                                        value = location,
+                                        onValueChange = {
+                                            location = it
+                                            if (locationError != null) locationError = null
+                                        },
+                                        placeholder = { Text("Ej: Casa / Parque / Cafetería") },
+                                        isError = locationError != null,
+                                        supportingText = locationError?.let { { Text(it, color = Color(0xFFFF1744)) } },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. PRECIO / PRESUPUESTO (Budget)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFFF9FAFB),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.AttachMoney, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp))
+                                    Column {
+                                        Text("Campo de Precio / Presupuesto", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(
+                                            text = if (showBudget) "Visible en la tarjeta" else "Oculto (apagado)",
+                                            fontSize = 11.sp,
+                                            color = if (showBudget) Color(0xFF2E7D32) else Color.Gray
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = showBudget,
+                                    onCheckedChange = { showBudget = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF4CAF50))
+                                )
+                            }
+
+                            AnimatedVisibility(visible = showBudget) {
+                                Column(modifier = Modifier.padding(top = 8.dp)) {
+                                    OutlinedTextField(
+                                        value = budget,
+                                        onValueChange = {
+                                            budget = it
+                                            if (budgetError != null) budgetError = null
+                                        },
+                                        placeholder = { Text("Ej: $200 MXN o Gratis") },
+                                        isError = budgetError != null,
+                                        supportingText = budgetError?.let { { Text(it, color = Color(0xFFFF1744)) } },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. TIEMPO / DURACIÓN (Duration)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFFF9FAFB),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(20.dp))
+                                    Column {
+                                        Text("Campo de Tiempo / Duración", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(
+                                            text = if (showDuration) "Visible en la tarjeta" else "Oculto (apagado)",
+                                            fontSize = 11.sp,
+                                            color = if (showDuration) Color(0xFF2E7D32) else Color.Gray
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = showDuration,
+                                    onCheckedChange = { showDuration = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFFF9800))
+                                )
+                            }
+
+                            AnimatedVisibility(visible = showDuration) {
+                                Column(modifier = Modifier.padding(top = 8.dp)) {
+                                    OutlinedTextField(
+                                        value = duration,
+                                        onValueChange = { duration = it },
+                                        placeholder = { Text("Ej: 2 horas, Tarde completa...") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. NÚMERO DE PERSONAS (People / Capacity)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFFF9FAFB),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Group, contentDescription = null, tint = Color(0xFF673AB7), modifier = Modifier.size(20.dp))
+                                    Column {
+                                        Text("¿Cuántas personas pueden participar?", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(
+                                            text = if (showPeopleCount) "Visible en la tarjeta" else "Oculto (apagado)",
+                                            fontSize = 11.sp,
+                                            color = if (showPeopleCount) Color(0xFF2E7D32) else Color.Gray
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = showPeopleCount,
+                                    onCheckedChange = { showPeopleCount = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF673AB7))
+                                )
+                            }
+
+                            AnimatedVisibility(visible = showPeopleCount) {
+                                Column(
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        peopleQuickOptions.forEach { opt ->
+                                            val isSelected = peopleCount == opt
+                                            FilterChip(
+                                                selected = isSelected,
+                                                onClick = { peopleCount = opt },
+                                                label = { Text(opt, fontSize = 11.sp) },
+                                                colors = FilterChipDefaults.filterChipColors(
+                                                    selectedContainerColor = Color(0xFF673AB7),
+                                                    selectedLabelColor = Color.White
+                                                )
+                                            )
+                                        }
+                                    }
+
+                                    OutlinedTextField(
+                                        value = peopleCount,
+                                        onValueChange = { peopleCount = it },
+                                        placeholder = { Text("Ej: 2 personas, 4 amigos...") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Tags Input
@@ -717,7 +995,7 @@ fun CreatePlanModal(
                             OutlinedTextField(
                                 value = tagInput,
                                 onValueChange = { tagInput = it },
-                                placeholder = { Text("Añadir tag (ej: Amigos)") },
+                                placeholder = { Text("Añadir tag (ej: Romántico)") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp)
@@ -770,15 +1048,35 @@ fun CreatePlanModal(
                 // Submit Button
                 Button(
                     onClick = { validateAndSubmit() },
+                    enabled = !isUploadingImage,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
                     shape = RoundedCornerShape(25.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63))
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (editingPlan != null) Color(0xFF1976D2) else Color(0xFFE91E63)
+                    )
                 ) {
-                    Icon(Icons.Default.Save, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Guardar Plan", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    if (isUploadingImage) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Subiendo imagen...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    } else {
+                        Icon(
+                            imageVector = if (editingPlan != null) Icons.Default.Check else Icons.Default.Save,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (editingPlan != null) "Guardar Cambios del Plan" else "Guardar Plan",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
                 }
             }
         }

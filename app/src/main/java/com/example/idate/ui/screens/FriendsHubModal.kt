@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -48,16 +49,21 @@ fun FriendsHubModal(
     onAddFriendToGroup: (groupCode: String, friend: Friend) -> Unit,
     onRemoveGroup: (groupId: String) -> Unit,
     onUpdateProfile: (name: String, avatarEmoji: String, bio: String) -> Unit,
-    onSelectContext: (ActivePlanningContext) -> Unit
+    onSelectContext: (ActivePlanningContext) -> Unit,
+    onResetAllMatches: () -> Unit = {},
+    groupDecksMap: Map<String, List<DateDeck>> = emptyMap(),
+    onRemoveDeckFromGroup: (groupCode: String, deckId: String) -> Unit = { _, _ -> },
+    initialTab: Int = 0
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Amigos, 1: Grupos, 2: Mi Perfil
+    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) } // 0: Amigos, 1: Grupos, 2: Mi Perfil
 
     // Sub-states
     var friendCodeInput by remember { mutableStateOf("") }
     var groupCodeInput by remember { mutableStateOf("") }
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var showJoinGroupDialog by remember { mutableStateOf(false) }
+    var showResetMatchesDialog by remember { mutableStateOf(false) }
     var groupToInviteFriends by remember { mutableStateOf<FriendGroup?>(null) }
     var friendToDelete by remember { mutableStateOf<Friend?>(null) }
 
@@ -97,6 +103,9 @@ fun FriendsHubModal(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -109,22 +118,37 @@ fun FriendsHubModal(
                         ) {
                             Text(userProfile?.avatarEmoji ?: "👥", fontSize = 20.sp)
                         }
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Comunidad y Amigos",
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.Black
+                                color = Color.Black,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Planifica citas y salidas juntos",
                                 fontSize = 11.sp,
-                                color = Color.Gray
+                                color = Color.Gray,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Color.Gray)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        IconButton(
+                            onClick = { showResetMatchesDialog = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Reiniciar Matches", tint = Color(0xFF6B7280))
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Color.Gray)
+                        }
                     }
                 }
 
@@ -639,6 +663,67 @@ fun FriendsHubModal(
                                                     tint = Color.LightGray,
                                                     modifier = Modifier.size(18.dp)
                                                 )
+                                            }
+                                        }
+
+                                        // Barajas importadas en el grupo
+                                        val importedDecks = groupDecksMap[group.groupCode] ?: emptyList()
+                                        if (importedDecks.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Text(
+                                                text = "🃏 Barajas en este Grupo (${importedDecks.size}):",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF4A148C)
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                importedDecks.forEach { deck ->
+                                                    Surface(
+                                                        color = Color(0xFFF3E5F5),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                modifier = Modifier.weight(1f)
+                                                            ) {
+                                                                Text(deck.iconEmoji, fontSize = 16.sp)
+                                                                Column {
+                                                                    Text(
+                                                                        text = deck.name,
+                                                                        fontSize = 12.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        color = Color(0xFF1E293B),
+                                                                        maxLines = 1
+                                                                    )
+                                                                    Text(
+                                                                        text = "${deck.planIds.size} planes",
+                                                                        fontSize = 10.sp,
+                                                                        color = Color.Gray
+                                                                    )
+                                                                }
+                                                            }
+                                                            IconButton(
+                                                                onClick = { onRemoveDeckFromGroup(group.groupCode, deck.id) },
+                                                                modifier = Modifier.size(28.dp)
+                                                            ) {
+                                                                Icon(
+                                                                    Icons.Default.Delete,
+                                                                    contentDescription = "Quitar baraja del grupo",
+                                                                    tint = Color(0xFFD32F2F),
+                                                                    modifier = Modifier.size(16.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -1222,6 +1307,34 @@ fun FriendsHubModal(
             },
             dismissButton = {
                 OutlinedButton(onClick = { friendToDelete = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (showResetMatchesDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetMatchesDialog = false },
+            title = {
+                Text("¿Reiniciar todos los matches?", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("Esto pondrá a cero todos los matches y votos mutuos de amigos y grupos.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onResetAllMatches()
+                        showResetMatchesDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                ) {
+                    Text("Reiniciar Matches")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showResetMatchesDialog = false }) {
                     Text("Cancelar")
                 }
             }

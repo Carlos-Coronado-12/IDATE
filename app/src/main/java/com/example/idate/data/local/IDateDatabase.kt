@@ -19,9 +19,10 @@ import com.example.idate.data.local.entity.*
         UserProfileEntity::class,
         FriendEntity::class,
         GroupEntity::class,
-        TargetLikeEntity::class
+        TargetLikeEntity::class,
+        DateDeckEntity::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -30,6 +31,7 @@ abstract class IDateDatabase : RoomDatabase() {
     abstract fun likedPlanDao(): LikedPlanDao
     abstract fun matchSessionDao(): MatchSessionDao
     abstract fun friendDao(): FriendDao
+    abstract fun dateDeckDao(): com.example.idate.data.local.dao.DateDeckDao
 
     companion object {
         @Volatile

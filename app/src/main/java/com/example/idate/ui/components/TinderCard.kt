@@ -5,7 +5,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,6 +21,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -63,10 +66,14 @@ fun TinderCard(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .offset { IntOffset(offsetX.value.roundToInt(), offsetY.value.roundToInt()) }
-            .rotate(rotation)
-            .shadow(12.dp, shape = RoundedCornerShape(28.dp))
-            .clip(RoundedCornerShape(28.dp))
+            .graphicsLayer {
+                translationX = offsetX.value
+                translationY = offsetY.value
+                rotationZ = (offsetX.value / 60f).coerceIn(-10f, 10f)
+                shadowElevation = 12.dp.toPx()
+                shape = RoundedCornerShape(28.dp)
+                clip = true
+            }
             .border(
                 width = 3.dp,
                 brush = Brush.verticalGradient(
@@ -106,9 +113,9 @@ fun TinderCard(
                 )
             }
     ) {
-        // Plan Background Image (Instant local bundled asset or custom web URL)
-        AsyncImage(
-            model = if (plan.imageUrl.isNotBlank()) plan.imageUrl else if (plan.imageResId != 0) plan.imageResId else R.drawable.plan_legos,
+        // Plan Background Image (Instant local bundled asset, base64, or custom web URL)
+        PlanImage(
+            plan = plan,
             contentDescription = plan.title,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -274,13 +281,16 @@ fun TinderCard(
 
             // Badges Row
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (plan.location.isNotEmpty()) InfoBadge(icon = Icons.Default.LocationOn, text = plan.location)
-                if (plan.duration.isNotEmpty()) InfoBadge(icon = Icons.Default.AccessTime, text = plan.duration)
-                if (plan.budget.isNotEmpty()) InfoBadge(icon = Icons.Default.AttachMoney, text = plan.budget)
+                if (plan.showPeopleCount && plan.peopleCount.isNotEmpty()) InfoBadge(icon = Icons.Default.Group, text = plan.peopleCount)
+                if (plan.showLocation && plan.location.isNotEmpty()) InfoBadge(icon = Icons.Default.LocationOn, text = plan.location)
+                if (plan.showDuration && plan.duration.isNotEmpty()) InfoBadge(icon = Icons.Default.AccessTime, text = plan.duration)
+                if (plan.showBudget && plan.budget.isNotEmpty()) InfoBadge(icon = Icons.Default.AttachMoney, text = plan.budget)
             }
 
             Spacer(modifier = Modifier.height(8.dp))

@@ -27,6 +27,7 @@ fun PlanManagerSheet(
     plans: List<Plan>,
     onDismiss: () -> Unit,
     onCreateNewPlan: () -> Unit,
+    onEditPlan: (Plan) -> Unit = {},
     onDeletePlan: (Int) -> Unit,
     onDeleteAllPlans: () -> Unit,
     onRestoreDefaults: () -> Unit
@@ -187,23 +188,45 @@ fun PlanManagerSheet(
                                         fontSize = 14.sp,
                                         color = Color.Black
                                     )
+                                    val detailsList = mutableListOf<String>()
+                                    if (plan.category.isNotBlank()) detailsList.add(plan.category)
+                                    if (plan.showPeopleCount && plan.peopleCount.isNotBlank()) detailsList.add("👥 ${plan.peopleCount}")
+                                    if (plan.showDuration && plan.duration.isNotBlank()) detailsList.add("⏱️ ${plan.duration}")
+                                    if (plan.showBudget && plan.budget.isNotBlank()) detailsList.add("💰 ${plan.budget}")
                                     Text(
-                                        text = "${plan.category} • ${plan.detail}",
+                                        text = detailsList.joinToString(" • "),
                                         fontSize = 12.sp,
                                         color = Color.Gray
                                     )
                                 }
 
-                                IconButton(
-                                    onClick = { onDeletePlan(plan.id) },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Eliminar plan ${plan.title}",
-                                        tint = Color(0xFFFF5252),
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    IconButton(
+                                        onClick = {
+                                            onDismiss()
+                                            onEditPlan(plan)
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Editar plan ${plan.title}",
+                                            tint = Color(0xFF1976D2),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { onDeletePlan(plan.id) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Eliminar plan ${plan.title}",
+                                            tint = Color(0xFFFF5252),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

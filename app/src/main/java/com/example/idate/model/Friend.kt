@@ -56,21 +56,24 @@ data class FriendGroup(
 )
 
 data class ActivePlanningContext(
-    val type: ContextType = ContextType.GLOBAL,
+    val type: ContextType = ContextType.DECK,
     val friend: Friend? = null,
-    val group: FriendGroup? = null
+    val group: FriendGroup? = null,
+    val deck: DateDeck? = null
 ) {
     enum class ContextType {
-        GLOBAL,
+        DECK,
         FRIEND,
-        GROUP
+        GROUP,
+        GLOBAL
     }
 
     val displayName: String
         get() = when (type) {
-            ContextType.GLOBAL -> "Todos los Planes"
+            ContextType.DECK -> if (deck != null) "Baraja: ${deck.name}" else "Mis Barajas"
             ContextType.FRIEND -> "Planes con ${friend?.name ?: "Amigo"}"
             ContextType.GROUP -> "Grupo: ${group?.name ?: "Grupo"}"
+            ContextType.GLOBAL -> "Mis Barajas"
         }
 
     val emoji: String
@@ -78,5 +81,6 @@ data class ActivePlanningContext(
             ContextType.GLOBAL -> "✨"
             ContextType.FRIEND -> friend?.avatarEmoji ?: "👤"
             ContextType.GROUP -> group?.iconEmoji ?: "👥"
+            ContextType.DECK -> deck?.iconEmoji ?: "🎴"
         }
 }

@@ -70,6 +70,12 @@ interface FriendDao {
     @Query("SELECT * FROM friend_likes WHERE targetId = :targetId")
     fun getLikesForTarget(targetId: String): Flow<List<TargetLikeEntity>>
 
-    @Query("DELETE FROM friend_likes WHERE targetId = :targetId AND planId = :planId")
-    suspend fun removeTargetLike(targetId: String, planId: Int)
+    @Query("UPDATE friends SET mutualMatchesCount = 0")
+    suspend fun resetAllFriendMatches()
+
+    @Query("UPDATE friend_groups SET matchedPlansCount = 0")
+    suspend fun resetAllGroupMatches()
+
+    @Query("DELETE FROM friend_likes")
+    suspend fun clearAllTargetLikes()
 }

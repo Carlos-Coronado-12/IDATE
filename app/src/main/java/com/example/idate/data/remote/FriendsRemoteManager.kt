@@ -22,6 +22,17 @@ sealed class FriendEvent {
         val likedUserNames: List<String> = emptyList()
     ) : FriendEvent()
     data class MemberJoinedGroup(val memberName: String, val groupName: String) : FriendEvent()
+    data class DeckInvitationReceived(
+        val inviteId: String,
+        val deckId: String,
+        val deckName: String,
+        val description: String = "",
+        val colorHex: Long = 0xFFFF4B72L,
+        val fromFriendName: String,
+        val fromFriendId: String,
+        val iconEmoji: String,
+        val plans: List<Plan>
+    ) : FriendEvent()
     data class Info(val message: String) : FriendEvent()
     data class Error(val message: String) : FriendEvent()
 }
@@ -414,6 +425,19 @@ object FriendsRemoteManager {
         })
     }
 
+    // Leave or Delete Group in Cloud
+    fun leaveOrDeleteGroupInCloud(groupCode: String, myUserId: String, isCreatorOrSoleMember: Boolean) {
+        val groupRef = realtimeDb.getReference("groups").child(groupCode)
+        if (isCreatorOrSoleMember) {
+            groupRef.removeValue()
+        } else {
+            groupRef.child("members").child(myUserId).removeValue()
+        }
+        activeGroupListeners.remove(groupCode)?.let { listener ->
+            groupRef.removeEventListener(listener)
+        }
+    }
+
     // Listen to all groups that the user is a member of in real-time
     fun listenToAllUserGroups(myUserId: String, onGroupsUpdated: (List<FriendGroup>) -> Unit) {
         allGroupsListener?.let {
@@ -542,6 +566,300 @@ object FriendsRemoteManager {
         if (!isLike) return
         val ref = realtimeDb.getReference("groups").child(groupCode).child("votes").child(planId.toString())
         ref.child(userId).setValue(userName)
+    }
+
+    // Reset Friend Pair Votes
+    fun resetFriendPairVotes(myUserId: String, friendId: String) {
+        val pairKey = getPairKey(myUserId, friendId)
+        realtimeDb.getReference("friendPairs").child(pairKey).child("votes").removeValue()
+        notifiedMatches.removeAll { it.startsWith(pairKey) }
+    }
+
+    // Reset Group Votes
+    fun resetGroupVotes(groupCode: String) {
+        realtimeDb.getReference("groups").child(groupCode).child("votes").removeValue()
+        notifiedMatches.removeAll { it.startsWith(groupCode) }
+        _activeGroupMatches.value = _activeGroupMatches.value - groupCode
+    }
+
+    // Reset All Matches in Cloud and Local State
+    fun resetAllCloudMatches(myUserId: String, friendIds: List<String>, groupCodes: List<String>) {
+        notifiedMatches.clear()
+        _activeGroupMatches.value = emptyMap()
+        for (friendId in friendIds) {
+            val pairKey = getPairKey(myUserId, friendId)
+            realtimeDb.getReference("friendPairs").child(pairKey).child("votes").removeValue()
+        }
+        for (code in groupCodes) {
+            realtimeDb.getReference("groups").child(code).child("votes").removeValue()
+        }
+    }
+
+    // Send Deck Invitation to a Friend with full Plan objects
+    fun sendDeckInvitation(
+        toFriendId: String,
+        fromUser: UserProfile,
+        deck: DateDeck,
+        plans: List<Plan>,
+        onResult: (Result<String>) -> Unit
+    ) {
+        try {
+            val inviteId = "inv_${System.currentTimeMillis()}"
+            val plansListMaps = plans.map { plan ->
+                mapOf(
+                    "id" to plan.id,
+                    "title" to plan.title,
+                    "category" to plan.category,
+                    "detail" to plan.detail,
+                    "description" to plan.description,
+                    "location" to plan.location,
+                    "duration" to plan.duration,
+                    "budget" to plan.budget,
+                    "peopleCount" to plan.peopleCount,
+                    "showBudget" to plan.showBudget,
+                    "showDuration" to plan.showDuration,
+                    "showLocation" to plan.showLocation,
+                    "showPeopleCount" to plan.showPeopleCount,
+                    "tags" to plan.tags,
+                    "imageUrl" to plan.imageUrl,
+                    "iconEmoji" to plan.iconEmoji,
+                    "scope" to plan.scope.name
+                )
+            }
+
+            val inviteData = mapOf(
+                "inviteId" to inviteId,
+                "deckId" to deck.id,
+                "deckName" to deck.name,
+                "description" to deck.description,
+                "iconEmoji" to deck.iconEmoji,
+                "colorHex" to deck.colorHex,
+                "planIds" to deck.planIds,
+                "plans" to plansListMaps,
+                "fromUserId" to fromUser.userId,
+                "fromUserName" to fromUser.name,
+                "createdAt" to System.currentTimeMillis()
+            )
+            realtimeDb.getReference("deckInvitations")
+                .child(toFriendId)
+                .child(inviteId)
+                .setValue(inviteData)
+                .addOnSuccessListener {
+                    onResult(Result.success("¡Invitación a jugar '${deck.name}' enviada con éxito!"))
+                }
+                .addOnFailureListener { e ->
+                    onResult(Result.failure(e))
+                }
+        } catch (e: Exception) {
+            onResult(Result.failure(e))
+        }
+    }
+
+    // Listen to Deck Invitations received by user
+    fun listenToDeckInvitations(myUserId: String) {
+        realtimeDb.getReference("deckInvitations").child(myUserId)
+            .addChildEventListener(object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    val inviteId = snapshot.child("inviteId").getValue(String::class.java) ?: snapshot.key ?: return
+                    val deckId = snapshot.child("deckId").getValue(String::class.java) ?: return
+                    val deckName = snapshot.child("deckName").getValue(String::class.java) ?: "Baraja"
+                    val desc = snapshot.child("description").getValue(String::class.java) ?: ""
+                    val colorHex = snapshot.child("colorHex").getValue(Long::class.java) ?: 0xFFFF4B72L
+                    val fromUserName = snapshot.child("fromUserName").getValue(String::class.java) ?: "Un amigo"
+                    val fromUserId = snapshot.child("fromUserId").getValue(String::class.java) ?: ""
+                    val iconEmoji = snapshot.child("iconEmoji").getValue(String::class.java) ?: "🃏"
+
+                    val plansList = mutableListOf<Plan>()
+                    snapshot.child("plans").children.forEach { planSnap ->
+                        parsePlanFromSnapshot(planSnap)?.let { plansList.add(it) }
+                    }
+
+                    coroutineScope.launch {
+                        _friendEvents.emit(
+                            FriendEvent.DeckInvitationReceived(
+                                inviteId = inviteId,
+                                deckId = deckId,
+                                deckName = deckName,
+                                description = desc,
+                                colorHex = colorHex,
+                                fromFriendName = fromUserName,
+                                fromFriendId = fromUserId,
+                                iconEmoji = iconEmoji,
+                                plans = plansList
+                            )
+                        )
+                    }
+                }
+
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onChildRemoved(snapshot: DataSnapshot) {}
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {}
+            })
+    }
+
+    // Delete or Dismiss a deck invitation
+    fun dismissDeckInvitation(myUserId: String, inviteId: String) {
+        realtimeDb.getReference("deckInvitations").child(myUserId).child(inviteId).removeValue()
+    }
+
+    // Import a Deck into a Group in Cloud (Group Pooled Deck) with full Plan objects
+    fun importDeckToGroupInCloud(
+        groupCode: String,
+        userName: String,
+        deck: DateDeck,
+        plans: List<Plan>,
+        onResult: (Result<String>) -> Unit
+    ) {
+        try {
+            val plansListMaps = plans.map { plan ->
+                mapOf(
+                    "id" to plan.id,
+                    "title" to plan.title,
+                    "category" to plan.category,
+                    "detail" to plan.detail,
+                    "description" to plan.description,
+                    "location" to plan.location,
+                    "duration" to plan.duration,
+                    "budget" to plan.budget,
+                    "peopleCount" to plan.peopleCount,
+                    "showBudget" to plan.showBudget,
+                    "showDuration" to plan.showDuration,
+                    "showLocation" to plan.showLocation,
+                    "showPeopleCount" to plan.showPeopleCount,
+                    "tags" to plan.tags,
+                    "imageUrl" to plan.imageUrl,
+                    "iconEmoji" to plan.iconEmoji,
+                    "scope" to plan.scope.name
+                )
+            }
+
+            val deckData = mapOf(
+                "deckId" to deck.id,
+                "name" to deck.name,
+                "description" to deck.description,
+                "iconEmoji" to deck.iconEmoji,
+                "colorHex" to deck.colorHex,
+                "planIds" to deck.planIds,
+                "plans" to plansListMaps,
+                "importedBy" to userName,
+                "importedAt" to System.currentTimeMillis()
+            )
+            realtimeDb.getReference("groups")
+                .child(groupCode)
+                .child("importedDecks")
+                .child(deck.id)
+                .setValue(deckData)
+                .addOnSuccessListener {
+                    onResult(Result.success("¡Baraja '${deck.name}' importada a la Baraja Grupal!"))
+                }
+                .addOnFailureListener { e ->
+                    onResult(Result.failure(e))
+                }
+        } catch (e: Exception) {
+            onResult(Result.failure(e))
+        }
+    }
+
+    // Remove Deck from Group in Cloud
+    fun removeDeckFromGroupInCloud(groupCode: String, deckId: String, onResult: (Result<String>) -> Unit) {
+        realtimeDb.getReference("groups")
+            .child(groupCode)
+            .child("importedDecks")
+            .child(deckId)
+            .removeValue()
+            .addOnSuccessListener {
+                onResult(Result.success("Baraja eliminada del grupo"))
+            }
+            .addOnFailureListener { e ->
+                onResult(Result.failure(e))
+            }
+    }
+
+    // Listen to all Imported Decks for a Group in Cloud
+    fun listenToGroupImportedDecks(
+        groupCode: String,
+        onDecksUpdated: (List<Pair<DateDeck, List<Plan>>>) -> Unit
+    ) {
+        realtimeDb.getReference("groups").child(groupCode).child("importedDecks")
+            .addValueEventListener(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val list = mutableListOf<Pair<DateDeck, List<Plan>>>()
+                    snapshot.children.forEach { child ->
+                        val id = child.child("deckId").getValue(String::class.java) ?: child.key ?: return@forEach
+                        val name = child.child("name").getValue(String::class.java) ?: ""
+                        val description = child.child("description").getValue(String::class.java) ?: ""
+                        val iconEmoji = child.child("iconEmoji").getValue(String::class.java) ?: "🃏"
+                        val colorHex = child.child("colorHex").getValue(Long::class.java) ?: 0xFFFF4B72L
+                        val planIds = child.child("planIds").children.mapNotNull { it.getValue(Int::class.java) }
+                        val importedBy = child.child("importedBy").getValue(String::class.java) ?: ""
+
+                        val plans = mutableListOf<Plan>()
+                        child.child("plans").children.forEach { planSnap ->
+                            parsePlanFromSnapshot(planSnap)?.let { plans.add(it) }
+                        }
+
+                        val deck = DateDeck(
+                            id = id,
+                            name = name,
+                            description = description,
+                            iconEmoji = iconEmoji,
+                            colorHex = colorHex,
+                            planIds = if (plans.isNotEmpty()) plans.map { it.id } else planIds,
+                            createdBy = importedBy,
+                            isImported = true
+                        )
+                        list.add(Pair(deck, plans))
+                    }
+                    onDecksUpdated(list)
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    Log.e("IDATE_FRIENDS", "Error escuchando barajas del grupo: ${error.message}")
+                }
+            })
+    }
+
+    private fun parsePlanFromSnapshot(snap: DataSnapshot): Plan? {
+        val id = snap.child("id").getValue(Long::class.java)?.toInt()
+            ?: snap.key?.toIntOrNull() ?: return null
+        val title = snap.child("title").getValue(String::class.java) ?: return null
+        val category = snap.child("category").getValue(String::class.java) ?: "Planes"
+        val detail = snap.child("detail").getValue(String::class.java) ?: ""
+        val description = snap.child("description").getValue(String::class.java) ?: ""
+        val location = snap.child("location").getValue(String::class.java) ?: ""
+        val duration = snap.child("duration").getValue(String::class.java) ?: ""
+        val budget = snap.child("budget").getValue(String::class.java) ?: ""
+        val peopleCount = snap.child("peopleCount").getValue(String::class.java) ?: "2 personas"
+        val showBudget = snap.child("showBudget").getValue(Boolean::class.java) ?: true
+        val showDuration = snap.child("showDuration").getValue(Boolean::class.java) ?: true
+        val showLocation = snap.child("showLocation").getValue(Boolean::class.java) ?: true
+        val showPeopleCount = snap.child("showPeopleCount").getValue(Boolean::class.java) ?: true
+        val imageUrl = snap.child("imageUrl").getValue(String::class.java) ?: ""
+        val emoji = snap.child("iconEmoji").getValue(String::class.java) ?: "🎉"
+        val tagsList = mutableListOf<String>()
+        snap.child("tags").children.forEach { tagSnap ->
+            tagSnap.getValue(String::class.java)?.let { tagsList.add(it) }
+        }
+
+        return Plan(
+            id = id,
+            title = title,
+            category = category,
+            detail = detail.ifBlank { "$location / $budget" },
+            description = description,
+            location = location,
+            duration = duration,
+            budget = budget,
+            peopleCount = peopleCount,
+            showBudget = showBudget,
+            showDuration = showDuration,
+            showLocation = showLocation,
+            showPeopleCount = showPeopleCount,
+            tags = tagsList,
+            imageUrl = imageUrl,
+            iconEmoji = emoji
+        )
     }
 
     private fun getPairKey(id1: String, id2: String): String {

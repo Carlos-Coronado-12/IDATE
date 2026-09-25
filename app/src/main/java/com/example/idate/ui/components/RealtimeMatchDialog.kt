@@ -175,8 +175,8 @@ fun RealtimeMatchDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        AsyncImage(
-                            model = if (plan.imageUrl.isNotBlank()) plan.imageUrl else if (plan.imageResId != 0) plan.imageResId else R.drawable.plan_legos,
+                        PlanImage(
+                            plan = plan,
                             contentDescription = plan.title,
                             modifier = Modifier
                                 .size(64.dp)

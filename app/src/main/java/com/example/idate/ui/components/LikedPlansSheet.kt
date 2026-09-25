@@ -52,6 +52,9 @@ fun LikedPlansSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -63,18 +66,21 @@ fun LikedPlansSheet(
                     )
                     Text(
                         text = "Mis Planes Guardados (${savedPlans.size})",
-                        fontSize = 20.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black
+                        color = Color.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                IconButton(
-                    onClick = onDismiss,
+                Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(34.dp)
                         .clip(CircleShape)
                         .background(Color(0xFFF0F0F0))
+                        .clickable { onDismiss() },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
@@ -148,8 +154,8 @@ fun SavedPlanItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            AsyncImage(
-                model = if (plan.imageUrl.isNotBlank()) plan.imageUrl else if (plan.imageResId != 0) plan.imageResId else R.drawable.plan_legos,
+            PlanImage(
+                plan = plan,
                 contentDescription = plan.title,
                 modifier = Modifier
                     .size(70.dp)
@@ -164,14 +170,16 @@ fun SavedPlanItem(
                 ) {
                     Text(
                         text = plan.category,
-                        color = Color.Red,
+                        color = Color(0xFFE91E63),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "• ${plan.iconEmoji}",
-                        fontSize = 12.sp
-                    )
+                    if (plan.iconEmoji.isNotBlank()) {
+                        Text(
+                            text = "• ${plan.iconEmoji}",
+                            fontSize = 12.sp
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(2.dp))
@@ -185,23 +193,37 @@ fun SavedPlanItem(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                val details = listOfNotNull(
+                    plan.location.takeIf { it.isNotBlank() }?.let { "📍 $it" },
+                    plan.budget.takeIf { it.isNotBlank() }?.let { "💰 $it" },
+                    plan.duration.takeIf { it.isNotBlank() }?.let { "⏱️ $it" }
+                ).joinToString("  •  ")
 
-                Text(
-                    text = "📍 ${plan.location} | 💰 ${plan.budget}",
-                    fontSize = 12.sp,
-                    color = Color.Gray,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (details.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = details,
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
-            IconButton(onClick = onDelete) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFFEE2E2))
+                    .clickable { onDelete() },
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     imageVector = Icons.Default.Delete,
                     contentDescription = "Eliminar de guardados",
-                    tint = Color(0xFFFF5252),
-                    modifier = Modifier.size(20.dp)
+                    tint = Color(0xFFDC2626),
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
