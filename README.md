@@ -38,9 +38,3 @@
 ### 5. 📸 Creador Avanzado de Citas con Fotos
 * **Planes a tu medida:** Formulario para registrar cualquier plan o cita indicando título, descripción, categoría, presupuesto estimado, ubicación y tiempo de duración.
 * **Subida de fotos personalizadas:** Elige fotos directamente de la galería de tu celular o desde la nube para asignarles una imagen de portada a tus planes.
-
----
-
-### 6. 📱 Filtros y Gestión de Citas Guardadas
-* **Filtros rápidos:** Filtrado inmediato por categorías de planes (comida, entretenimiento, al aire libre, etc.) y rangos de presupuesto.
-* **Lista de planes guardados:** Panel donde se almacenan todas las citas a las que les diste *like* para consultarlas, revisar los detalles completos o eliminarlas cuando ya se hayan realizado.
