@@ -19,7 +19,6 @@ app/google-services.json
 
 # Build outputs
 app/build/
-*.apk
 *.aab
 
 # Local media assets
