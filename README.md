@@ -2,6 +2,12 @@
 
 **IDATE** es una aplicación diseñada para facilitar la elección de planes y citas en pareja o con amigos de forma interactiva, dinámica y divertida, eliminando la indecisión al momento de salir.
 
+## Landing page
+https://l-pc26.github.io/iDate/
+
+## Video demostrativo 
+https://drive.google.com/file/d/1yMEGcHNanNXxEn02dn9bOQiWNoD0KemC/view?usp=sharing
+
 ---
 
 ## Funcionalidades Principales
@@ -38,3 +44,16 @@
 ### 5. Creador Avanzado de Citas con Fotos
 * **Planes a tu medida:** Formulario para registrar cualquier plan o cita indicando título, descripción, categoría, presupuesto estimado, ubicación y tiempo de duración.
 * **Subida de fotos personalizadas:** Elige fotos directamente de la galería de tu celular o desde la nube para asignarles una imagen de portada a tus planes.
+
+---
+
+## Tecnologías utilizadas:
+* **El stack tecnológico** está compuesto por Kotlin como lenguaje base, una arquitectura MVVM integrada con Clean Architecture en la capa de datos, asincronía gestionada por Kotlin Coroutines y Flow, un backend as a service soportado por Firebase (Firestore, Realtime Database, Storage y Auth), y persistencia local mediante Room (SQLite).
+
+---
+
+## Integrantes
+* Zaid Castillo Hermosillo
+* Carlos Sebastian Coronado Altamirano
+* Leonardo Pereda Chanez
+* Canek Lugo Soto
